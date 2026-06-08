@@ -161,8 +161,9 @@ let bench_eio ~size ~rt =
 
 let bench_miou ~size ~rt =
   let a, b = pair () in
-  Miou_unix.run @@ fun () ->
-  let fa = Miou_unix.of_file_descr a and fb = Miou_unix.of_file_descr b in
+  Miou_unix.run ~domains:0 @@ fun () ->
+  let fa = Miou_unix.of_file_descr ~non_blocking:true a
+  and fb = Miou_unix.of_file_descr ~non_blocking:true b in
   let msg = String.make size 'x' in
   let cbuf = Bytes.create size and sbuf = Bytes.create size in
   let read_exact fd buf =
