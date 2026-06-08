@@ -66,7 +66,46 @@ let bench_lwt ~size ~rt =
   Unix.close b
 
 (* ------------------------------------------------------------------ *)
-(* Lwt_effects over Lwt_engine                                        *)
+(* Lwt_effects, monadic Compat style (the drop-in model: every          *)
+(* interruptible call returns a promise; implicit concurrency preserved) *)
+(* ------------------------------------------------------------------ *)
+
+let bench_compat ~size ~rt =
+  let open Lwt_effects in
+  let open Lwt_effects.Compat in
+  let a, b = pair () in
+  Unix.set_nonblock a;
+  Unix.set_nonblock b;
+  let msg = Bytes.make size 'x' in
+  let cbuf = Bytes.create size and sbuf = Bytes.create size in
+  let rec write_all fd off len =
+    if len = 0 then return_unit
+    else Io.write_m fd msg off len >>= fun n -> write_all fd (off + n) (len - n)
+  in
+  let rec read_exact fd buf off len =
+    if len = 0 then return_unit
+    else
+      Io.read_m fd buf off len >>= fun n ->
+      if n = 0 then fail End_of_file else read_exact fd buf (off + n) (len - n)
+  in
+  let rec client n =
+    if n = 0 then return_unit
+    else
+      write_all a 0 size >>= fun () ->
+      read_exact a cbuf 0 size >>= fun () -> client (n - 1)
+  in
+  let rec server n =
+    if n = 0 then return_unit
+    else
+      read_exact b sbuf 0 size >>= fun () ->
+      write_all b 0 size >>= fun () -> server (n - 1)
+  in
+  run (fun () -> both (client rt) (server rt) >>= fun _ -> return_unit);
+  Unix.close a;
+  Unix.close b
+
+(* ------------------------------------------------------------------ *)
+(* Lwt_effects, direct style (effect bind + await; loses async typing) *)
 (* ------------------------------------------------------------------ *)
 
 let bench_eff ~size ~rt =
@@ -188,8 +227,9 @@ let bench_miou ~size ~rt =
 let backends =
   [
     ("Lwt (epoll)", bench_lwt);
-    ("Lwt_effects (epoll)", bench_eff);
-    ("Lwt_effects (io_uring)", bench_uring);
+    ("Lwt_effects Compat (epoll)", bench_compat);
+    ("Lwt_effects direct (epoll)", bench_eff);
+    ("Lwt_effects direct (io_uring)", bench_uring);
     ("Eio (io_uring)", bench_eio);
     ("Miou", bench_miou);
   ]

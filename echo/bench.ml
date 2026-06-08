@@ -86,6 +86,59 @@ let bench_lwt () =
 (* Lwt_effects over Lwt_engine                                        *)
 (* ------------------------------------------------------------------ *)
 
+(* Monadic Compat style: every interruptible call returns a promise. *)
+let bench_compat () =
+  let open Lwt_effects in
+  let open Lwt_effects.Compat in
+  let ls, port = make_listener () in
+  Unix.set_nonblock ls;
+  let msg = Bytes.make size 'x' in
+  let rec write_all fd off len =
+    if len = 0 then return_unit
+    else Io.write_m fd msg off len >>= fun n -> write_all fd (off + n) (len - n)
+  in
+  let rec read_exact fd buf off len =
+    if len = 0 then return_unit
+    else
+      Io.read_m fd buf off len >>= fun n ->
+      if n = 0 then fail End_of_file else read_exact fd buf (off + n) (len - n)
+  in
+  let handler fd =
+    let buf = Bytes.create size in
+    let rec loop i =
+      if i = 0 then (Unix.close fd; return_unit)
+      else
+        read_exact fd buf 0 size >>= fun () ->
+        write_all fd 0 size >>= fun () -> loop (i - 1)
+    in
+    loop msgs
+  in
+  let client () =
+    let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+    Unix.set_nonblock s;
+    Io.connect_m s (Unix.ADDR_INET (loopback, port)) >>= fun () ->
+    let buf = Bytes.create size in
+    let rec loop i =
+      if i = 0 then (Unix.close s; return_unit)
+      else
+        write_all s 0 size >>= fun () ->
+        read_exact s buf 0 size >>= fun () -> loop (i - 1)
+    in
+    loop msgs
+  in
+  let rec accept_loop n acc =
+    if n = 0 then return acc
+    else
+      Io.accept_m ls >>= fun (c, _) ->
+      Unix.set_nonblock c;
+      accept_loop (n - 1) (handler c :: acc)
+  in
+  let server () = accept_loop conns [] >>= fun hs -> join hs in
+  run (fun () ->
+    both (server ()) (join (List.init conns (fun _ -> client ())))
+    >>= fun _ -> return_unit);
+  Unix.close ls
+
 let bench_eff () =
   let open Lwt_effects in
   let ls, port = make_listener () in
@@ -283,7 +336,8 @@ let () =
   Printf.printf "Echo TCP: %d connections x %d messages of %d bytes\n\n%!" conns
     msgs size;
   measure "Lwt (epoll)" bench_lwt;
-  measure "Lwt_effects (epoll)" bench_eff;
-  measure "Lwt_effects (io_uring)" bench_uring;
+  measure "Lwt_effects Compat (epoll)" bench_compat;
+  measure "Lwt_effects direct (epoll)" bench_eff;
+  measure "Lwt_effects direct (io_uring)" bench_uring;
   measure "Eio (io_uring)" bench_eio;
   measure "Miou" bench_miou
