@@ -157,7 +157,7 @@ opam install eio eio_main miou cstruct uring   # in a 5.x switch
 dune exec --profile release pingpong/bench.exe
 dune exec --profile release scheduling/bench.exe
 dune exec --profile release echo/bench.exe
-# cohttp benches: see the cohttp-effects-bench sibling project
+# cohttp benches: see the cohttp/ directory (separate dune-project)
 python3 charts/gen_charts.py            # regenerate the SVGs from the data
 ```
 
