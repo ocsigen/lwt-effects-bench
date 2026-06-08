@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="324" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
+<rect width="760" height="324" fill="white"/>
+<text x="16" y="24" font-size="16" font-weight="700">Echo TCP — 100 concurrent connections</text>
+<text x="16" y="42" fill="#5f6368">100 conn × 1000 msgs × 64 B — higher is better ↑ (round-trips / second)</text>
+<text x="240" y="72" text-anchor="end" font-weight="700">Lwt_effects direct (io_uring)</text>
+<rect x="250" y="54" width="440" height="26" rx="3" fill="#188038"/>
+<text x="698" y="72" fill="#202124" font-weight="700">107,000 ★</text>
+<text x="240" y="110" text-anchor="end">Lwt_effects Compat (io_uring)</text>
+<rect x="250" y="92" width="387" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
+<text x="645" y="110" fill="#202124">94,000</text>
+<text x="240" y="148" text-anchor="end">Eio (io_uring)</text>
+<rect x="250" y="130" width="378" height="26" rx="3" fill="#e8710a" opacity="0.72"/>
+<text x="636" y="148" fill="#202124">92,000</text>
+<text x="240" y="186" text-anchor="end">Lwt_effects direct (epoll)</text>
+<rect x="250" y="168" width="288" height="26" rx="3" fill="#188038" opacity="0.72"/>
+<text x="546" y="186" fill="#202124">70,000</text>
+<text x="240" y="224" text-anchor="end">Lwt (epoll)</text>
+<rect x="250" y="206" width="276" height="26" rx="3" fill="#9aa0a6" opacity="0.72"/>
+<text x="534" y="224" fill="#202124">67,000</text>
+<text x="240" y="262" text-anchor="end">Lwt_effects Compat (epoll)</text>
+<rect x="250" y="244" width="255" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
+<text x="513" y="262" fill="#202124">62,000</text>
+<text x="240" y="300" text-anchor="end">Miou</text>
+<rect x="250" y="282" width="82" height="26" rx="3" fill="#8430ce" opacity="0.72"/>
+<text x="340" y="300" fill="#202124">20,000</text>
+</svg>

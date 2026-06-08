@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="210" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
+<rect width="760" height="210" fill="white"/>
+<text x="16" y="24" font-size="16" font-weight="700">cohttp HTTP — same connection model (new conn / request)</text>
+<text x="16" y="42" fill="#5f6368">50 conn × 200 req, GET / — higher is better ↑ (requests / second)</text>
+<text x="240" y="72" text-anchor="end" font-weight="700">cohttp / Lwt_effects (native)</text>
+<rect x="250" y="54" width="440" height="26" rx="3" fill="#1a73e8"/>
+<text x="698" y="72" fill="#202124" font-weight="700">11,698 ★</text>
+<text x="240" y="110" text-anchor="end">cohttp-eio</text>
+<rect x="250" y="92" width="324" height="26" rx="3" fill="#e8710a" opacity="0.72"/>
+<text x="582" y="110" fill="#202124">8,604</text>
+<text x="240" y="148" text-anchor="end">cohttp-lwt (Lwt_effects interop)</text>
+<rect x="250" y="130" width="214" height="26" rx="3" fill="#9aa0a6" opacity="0.72"/>
+<text x="472" y="148" fill="#202124">5,678</text>
+<text x="240" y="186" text-anchor="end">cohttp-lwt (Lwt_main)</text>
+<rect x="250" y="168" width="211" height="26" rx="3" fill="#9aa0a6" opacity="0.72"/>
+<text x="469" y="186" fill="#202124">5,611</text>
+</svg>
