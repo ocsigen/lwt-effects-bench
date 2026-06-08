@@ -1,0 +1,16 @@
+(executable
+ (name bench)
+ (enabled_if
+  (and (>= %{ocaml_version} "5.0") (= %{system} linux)))
+ (libraries
+  lwt
+  lwt.unix
+  lwt_effects
+  lwt_effects_uring
+  eio
+  eio_main
+  eio.unix
+  miou
+  miou.unix
+  cstruct
+  unix))
