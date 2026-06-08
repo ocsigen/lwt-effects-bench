@@ -100,17 +100,34 @@ Lwt_effects Compat ≈ Eio), epoll backends cluster around classic Lwt.
 
 ![cohttp](charts/cohttp.svg)
 
-cohttp is functorised over an IO monad. Thanks to making `Lwt_effects.t`
-covariant (`+'a t`), we could instantiate cohttp's codecs on a `Lwt_effects` IO
-backend (`Le_cohttp`) — **cohttp runs natively on the effect scheduler, keeping
-the `_ t` async type**. At the *same connection model* (new connection per
-request), cohttp-on-Lwt_effects is **~2× cohttp-lwt and ~1.4× cohttp-eio**. With
+Four ways to run the same `GET /` workload, all at the **same connection model**
+(new connection per request) so the bars are comparable:
+
+| label in the chart | what actually runs |
+|---|---|
+| **cohttp / Lwt_effects (native)** | cohttp's request/response **codecs** run directly on the effect scheduler, through a hand-written `Cohttp.S.IO` backend (`Le_cohttp`) on `Lwt_effects` I/O. No Lwt involved. Keeps the `_ t` async type. |
+| **cohttp-eio** | the upstream `cohttp-eio` library (codecs + `Client`) on Eio / io_uring. |
+| **cohttp-lwt (Lwt_effects interop)** | the **unmodified** `cohttp-lwt-unix` library, run *under* our scheduler via the Lwt interop. The cohttp code is still plain Lwt; our scheduler only pumps Lwt's loop. |
+| **cohttp-lwt (Lwt_main)** | the same `cohttp-lwt-unix`, on stock `Lwt_main`. The baseline. |
+
+cohttp's *core* (`cohttp`) is functorised over an IO monad. Thanks to making
+`Lwt_effects.t` covariant (`+'a t`), we could instantiate those codecs on a
+`Lwt_effects` IO backend — **cohttp's codecs run natively on the effect
+scheduler**. That native path is **~2× cohttp-lwt and ~1.4× cohttp-eio**; with
 HTTP keep-alive it reaches ~40k (epoll) / ~47k (io_uring) req/s.
 
-Running existing cohttp-lwt *under* our scheduler via the Lwt interop gives ≈ the
-same as `Lwt_main` (≈ 5.6k): interop provides **compatibility, not speed** — the
-Lwt code still runs on Lwt's own machinery. The speed-up requires using the
-effect primitives (or replacing Lwt's core).
+The two `cohttp-lwt` bars are nearly identical (≈ 5.6k): running existing
+cohttp-lwt *under* our scheduler via the interop gives **compatibility, not
+speed** — the Lwt code still runs on Lwt's own bind/promise/`Lwt_unix` machinery,
+so it benefits from neither cheap scheduling nor io_uring. The speed-up requires
+*using* the effect primitives (the native path) or replacing Lwt's core.
+
+> ⚠️ The "native" bar is **not a full cohttp `Client`/`Server`** — it's cohttp's
+> codecs driven by a minimal hand-written loop. A usable `cohttp-lwt_effects`
+> library (Server/Body/Client, io_uring zero-copy buffers, timeouts/cancellation)
+> remains to be built; see the
+> [limitations](#how-to-read-these--and-the-limitations) below. The bar shows
+> *"cohttp codecs run efficiently on the effect scheduler"*, not a shipped stack.
 
 ## How to read these — and the limitations
 
