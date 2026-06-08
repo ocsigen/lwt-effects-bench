@@ -139,6 +139,55 @@ let bench_compat () =
     >>= fun _ -> return_unit);
   Unix.close ls
 
+(* Monadic Compat over io_uring: async typing + io_uring speed. *)
+let bench_compat_uring () =
+  let open Lwt_effects in
+  let open Lwt_effects.Compat in
+  let module U = Lwt_effects_uring in
+  let ls, port = make_listener () in
+  Unix.set_nonblock ls;
+  let msg = Cstruct.create size in
+  Cstruct.memset msg (Char.code 'x');
+  let rec write_all fd cs =
+    if Cstruct.length cs = 0 then return_unit
+    else U.Io.write_m fd cs >>= fun n -> write_all fd (Cstruct.shift cs n)
+  in
+  let rec read_exact fd cs =
+    if Cstruct.length cs = 0 then return_unit
+    else
+      U.Io.read_m fd cs >>= fun n ->
+      if n = 0 then fail End_of_file else read_exact fd (Cstruct.shift cs n)
+  in
+  let handler fd =
+    let buf = Cstruct.create size in
+    let rec loop i =
+      if i = 0 then (Unix.close fd; return_unit)
+      else read_exact fd buf >>= fun () -> write_all fd msg >>= fun () -> loop (i - 1)
+    in
+    loop msgs
+  in
+  let client () =
+    let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+    Unix.set_nonblock s;
+    U.Io.connect_m s (Unix.ADDR_INET (loopback, port)) >>= fun () ->
+    Unix.clear_nonblock s;
+    let buf = Cstruct.create size in
+    let rec loop i =
+      if i = 0 then (Unix.close s; return_unit)
+      else write_all s msg >>= fun () -> read_exact s buf >>= fun () -> loop (i - 1)
+    in
+    loop msgs
+  in
+  let rec accept_loop n acc =
+    if n = 0 then return acc
+    else U.Io.accept_m ls >>= fun (c, _) -> accept_loop (n - 1) (handler c :: acc)
+  in
+  let server () = accept_loop conns [] >>= fun hs -> join hs in
+  U.run (fun () ->
+    both (server ()) (join (List.init conns (fun _ -> client ())))
+    >>= fun _ -> return_unit);
+  Unix.close ls
+
 let bench_eff () =
   let open Lwt_effects in
   let ls, port = make_listener () in
@@ -337,6 +386,7 @@ let () =
     msgs size;
   measure "Lwt (epoll)" bench_lwt;
   measure "Lwt_effects Compat (epoll)" bench_compat;
+  measure "Lwt_effects Compat (io_uring)" bench_compat_uring;
   measure "Lwt_effects direct (epoll)" bench_eff;
   measure "Lwt_effects direct (io_uring)" bench_uring;
   measure "Eio (io_uring)" bench_eio;

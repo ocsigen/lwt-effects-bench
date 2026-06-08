@@ -104,6 +104,37 @@ let bench_compat ~size ~rt =
   Unix.close a;
   Unix.close b
 
+(* Monadic Compat style over io_uring: async typing AND io_uring speed. *)
+let bench_compat_uring ~size ~rt =
+  let open Lwt_effects in
+  let open Lwt_effects.Compat in
+  let module U = Lwt_effects_uring in
+  let a, b = pair () in
+  let msg = Cstruct.create size in
+  Cstruct.memset msg (Char.code 'x');
+  let cbuf = Cstruct.create size and sbuf = Cstruct.create size in
+  let rec write_all fd cs =
+    if Cstruct.length cs = 0 then return_unit
+    else U.Io.write_m fd cs >>= fun n -> write_all fd (Cstruct.shift cs n)
+  in
+  let rec read_exact fd cs =
+    if Cstruct.length cs = 0 then return_unit
+    else
+      U.Io.read_m fd cs >>= fun n ->
+      if n = 0 then fail End_of_file else read_exact fd (Cstruct.shift cs n)
+  in
+  let rec client n =
+    if n = 0 then return_unit
+    else write_all a msg >>= fun () -> read_exact a cbuf >>= fun () -> client (n - 1)
+  in
+  let rec server n =
+    if n = 0 then return_unit
+    else read_exact b sbuf >>= fun () -> write_all b msg >>= fun () -> server (n - 1)
+  in
+  U.run (fun () -> both (client rt) (server rt) >>= fun _ -> return_unit);
+  Unix.close a;
+  Unix.close b
+
 (* ------------------------------------------------------------------ *)
 (* Lwt_effects, direct style (effect bind + await; loses async typing) *)
 (* ------------------------------------------------------------------ *)
@@ -228,6 +259,7 @@ let backends =
   [
     ("Lwt (epoll)", bench_lwt);
     ("Lwt_effects Compat (epoll)", bench_compat);
+    ("Lwt_effects Compat (io_uring)", bench_compat_uring);
     ("Lwt_effects direct (epoll)", bench_eff);
     ("Lwt_effects direct (io_uring)", bench_uring);
     ("Eio (io_uring)", bench_eio);
