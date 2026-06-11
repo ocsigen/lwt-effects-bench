@@ -1,0 +1,9 @@
+Echo TCP: 100 connections x 1000 messages of 64 bytes
+
+  Lwt (epoll)                 1.466 s         68224 rt/s
+  Lwt_effects Compat (epoll)    1.523 s         65653 rt/s
+  Lwt_effects Compat (io_uring)    1.005 s         99547 rt/s
+  Lwt_effects direct (epoll)    1.381 s         72408 rt/s
+  Lwt_effects direct (io_uring)    0.891 s        112212 rt/s
+  Eio (io_uring)              1.062 s         94194 rt/s
+  Miou                        4.729 s         21147 rt/s

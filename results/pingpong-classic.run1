@@ -1,33 +1,33 @@
-Ping-pong over a socketpair (payload sweep; Lwt core: classic)
+Ping-pong over a socketpair (payload sweep; Lwt core: cla)
 
 backend                              size us/round-trip           MB/s
-Lwt bytes [classic]                     1        10.91            0.2
-Lwt bytes [classic]                    64        11.53           11.1
-Lwt bytes [classic]                  1024        12.20          167.9
-Lwt bytes [classic]                 16384        15.59         2101.6
-Lwt bytes [classic]                262144       112.05         4679.2
-Lwt bigarray [classic]                  1        11.31            0.2
-Lwt bigarray [classic]                 64        11.64           11.0
-Lwt bigarray [classic]               1024        11.16          183.5
-Lwt bigarray [classic]              16384        15.36         2134.0
-Lwt bigarray [classic]             262144       109.40         4792.4
-Eio (io_uring)                          1         8.09            0.2
-Eio (io_uring)                         64         7.56           16.9
-Eio (io_uring)                       1024         7.79          262.9
-Eio (io_uring)                      16384        11.95         2742.8
-Eio (io_uring)                     262144        86.65         6050.4
-Miou                                    1        29.00            0.1
-Miou                                   64        25.99            4.9
-Miou                                 1024        26.06           78.6
-Miou                                16384        30.84         1062.4
-Miou                               262144       194.64         2693.7
-Lwt bytes [classic]+uring               1         8.48            0.2
-Lwt bytes [classic]+uring              64         8.56           14.9
-Lwt bytes [classic]+uring            1024        10.07          203.4
-Lwt bytes [classic]+uring           16384        17.91         1829.6
-Lwt bytes [classic]+uring          262144       442.72         1184.2
-Lwt bigarray [classic]+uring            1         7.82            0.3
-Lwt bigarray [classic]+uring           64         7.86           16.3
-Lwt bigarray [classic]+uring         1024         8.39          244.1
-Lwt bigarray [classic]+uring        16384        12.48         2624.6
-Lwt bigarray [classic]+uring       262144        88.34         5934.8
+Lwt bytes [cla]                         1         9.55            0.2
+Lwt bytes [cla]                        64         9.64           13.3
+Lwt bytes [cla]                      1024         9.91          206.7
+Lwt bytes [cla]                     16384        13.35         2455.3
+Lwt bytes [cla]                    262144        97.56         5374.2
+Lwt bigarray [cla]                      1         9.69            0.2
+Lwt bigarray [cla]                     64         9.85           13.0
+Lwt bigarray [cla]                   1024        10.03          204.1
+Lwt bigarray [cla]                  16384        13.02         2515.9
+Lwt bigarray [cla]                 262144        98.81         5305.9
+Eio (io_uring)                          1         6.43            0.3
+Eio (io_uring)                         64         6.26           20.4
+Eio (io_uring)                       1024         6.87          298.3
+Eio (io_uring)                      16384        10.69         3066.4
+Eio (io_uring)                     262144        79.79         6571.0
+Miou                                    1        22.00            0.1
+Miou                                   64        21.85            5.9
+Miou                                 1024        21.83           93.8
+Miou                                16384        26.05         1257.9
+Miou                               262144       169.17         3099.3
+Lwt bytes [cla]+uring                   1         6.97            0.3
+Lwt bytes [cla]+uring                  64         7.14           17.9
+Lwt bytes [cla]+uring                1024         8.30          246.9
+Lwt bytes [cla]+uring               16384        14.76         2219.8
+Lwt bytes [cla]+uring              262144       373.57         1403.5
+Lwt bigarray [cla]+uring                1         6.53            0.3
+Lwt bigarray [cla]+uring               64         6.59           19.4
+Lwt bigarray [cla]+uring             1024         7.29          281.0
+Lwt bigarray [cla]+uring            16384        10.19         3214.4
+Lwt bigarray [cla]+uring           262144        76.13         6886.5

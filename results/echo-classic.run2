@@ -1,6 +1,6 @@
 Echo TCP: 100 connections x 1000 messages of 64 bytes (Lwt core: classic)
 
-  Lwt [classic]               2.171 s         46062 rt/s
-  Eio (io_uring)              1.780 s         56181 rt/s
-  Miou                        6.637 s         15067 rt/s
-  Lwt [classic]+uring         1.726 s         57942 rt/s
+  Lwt [classic]               1.326 s         75437 rt/s
+  Eio (io_uring)              0.975 s        102593 rt/s
+  Miou                        4.683 s         21352 rt/s
+  Lwt [classic]+uring         1.010 s         98992 rt/s

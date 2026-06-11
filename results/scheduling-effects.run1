@@ -1,6 +1,6 @@
 Scheduling: 1000 fibers x 1000 yields = 1000000 yields (Lwt core: effects)
 
-  Lwt [effects]               0.439 s     439.5 ns/yield     61.02 words/yield
-  Lwt_direct [effects]        0.196 s     195.8 ns/yield     18.08 words/yield
-  Eio                         0.121 s     120.7 ns/yield     40.12 words/yield
-  Miou                        0.534 s     534.1 ns/yield     66.68 words/yield
+  Lwt [effects]               0.245 s     245.3 ns/yield     61.02 words/yield
+  Lwt_direct [effects]        0.167 s     167.4 ns/yield     18.08 words/yield
+  Eio                         0.095 s      94.6 ns/yield     40.12 words/yield
+  Miou                        0.440 s     440.4 ns/yield     66.68 words/yield

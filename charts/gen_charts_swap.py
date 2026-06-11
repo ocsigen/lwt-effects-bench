@@ -59,60 +59,57 @@ here = os.path.dirname(os.path.abspath(__file__))
 def p(name): return os.path.join(here, name)
 
 
-# ============ 2026-06-11 campaign: the in-place core swap ============
-# GREY = classic Lwt core, BLUE = effect-based core (the SAME lwt package,
-# recompiled — drop-in), ORANGE = Eio, PURPLE = Miou, GREEN = direct style.
+# ============ 2026-06-12 corrected campaign: the in-place core swap ============
+# Strict A/B protocol: per-core binaries saved and run ALTERNATING in the same
+# machine window (the 06-11 run interleaved nothing and was load-skewed).
+# GREY = classic Lwt core, BLUE = effect-based core (SAME lwt package,
+# recompiled - drop-in), ORANGE = Eio, PURPLE = Miou, GREEN = direct style.
 
-# 1. Scheduling: 1000 fibers x 1000 yields (pause storm)
 chart(p("swap-scheduling.svg"),
-      "Scheduling — pure cooperative yielding",
-      "1000 fibers × 1000 yields, no I/O", "ns per yield",
-      [("Miou", 534, PURPLE),
-       ("Lwt (effect core)", 407, BLUE),
-       ("Lwt (classic core)", 333, GREY),
-       ("Lwt_direct (effect core)", 196, GREEN),
-       ("Eio", 120, ORANGE)],
+      "Scheduling - pure cooperative yielding",
+      "1000 fibers x 1000 yields, no I/O", "ns per yield",
+      [("Miou", 409, PURPLE),
+       ("Lwt (classic core)", 225, GREY),
+       ("Lwt (effect core)", 207, BLUE),
+       ("Lwt_direct (either core)", 130, GREEN),
+       ("Eio", 79, ORANGE)],
       lower_better=True)
 
-# 2. Monadic bind on a pending promise (the server-loop pattern)
 chart(p("swap-bind.svg"),
       "Monadic bind on a pending promise",
-      "chain of 1000 binds over pause × 1000 (Lwt-family only)", "ns per bind",
-      [("Lwt (classic core)", 1700, GREY),
-       ("Lwt (effect core)", 118, BLUE)],
+      "chain of 1000 binds over pause x 1000 (Lwt-family only)", "ns per bind",
+      [("Lwt (classic core)", 1282, GREY),
+       ("Lwt (effect core)", 87, BLUE)],
       lower_better=True)
 
-# 3. Ping-pong latency, 1-byte payload
 chart(p("swap-pingpong.svg"),
       "Ping-pong latency over a socketpair (1 byte)",
-      "round-trip latency (bigarray rows for io_uring)", "µs per round-trip",
-      [("Miou", 27.4, PURPLE),
-       ("Lwt (effect core, epoll)", 11.6, BLUE),
-       ("Lwt (classic core, epoll)", 10.8, GREY),
-       ("Lwt (effect core, io_uring)", 8.1, BLUE),
-       ("Eio (io_uring)", 7.9, ORANGE),
-       ("Lwt (classic core, io_uring)", 7.8, GREY)],
+      "round-trip latency (bigarray rows for io_uring)", "us per round-trip",
+      [("Miou", 21.8, PURPLE),
+       ("Lwt (classic core, epoll)", 9.5, GREY),
+       ("Lwt (effect core, epoll)", 9.2, BLUE),
+       ("Lwt (classic core, io_uring)", 6.5, GREY),
+       ("Lwt (effect core, io_uring)", 6.5, BLUE),
+       ("Eio (io_uring)", 6.4, ORANGE)],
       lower_better=True)
 
-# 4. Echo TCP throughput, 100 connections
 chart(p("swap-echo.svg"),
-      "Echo TCP — 100 concurrent connections",
-      "100 conn × 1000 msgs × 64 B", "round-trips / second",
-      [("Eio (io_uring)", 56181, ORANGE),
-       ("Lwt (effect core, io_uring)", 51279, BLUE),
-       ("Lwt (classic core, io_uring)", 49914, GREY),
-       ("Lwt (classic core, epoll)", 43967, GREY),
-       ("Lwt (effect core, epoll)", 43330, BLUE),
-       ("Miou", 17205, PURPLE)],
+      "Echo TCP - 100 concurrent connections",
+      "100 conn x 1000 msgs x 64 B", "round-trips / second",
+      [("Lwt (classic core, io_uring)", 96187, GREY),
+       ("Lwt (effect core, io_uring)", 95302, BLUE),
+       ("Eio (io_uring)", 87750, ORANGE),
+       ("Lwt (effect core, epoll)", 77422, BLUE),
+       ("Lwt (classic core, epoll)", 73145, GREY),
+       ("Miou", 21898, PURPLE)],
       lower_better=False)
 
-# 5. cohttp: the UNMODIFIED cohttp-lwt-unix, recompiled
 chart(p("swap-cohttp.svg"),
-      "cohttp — unmodified cohttp-lwt-unix, recompiled",
-      "50 conn × 200 req, GET /, new connection per request", "requests / second",
+      "cohttp - unmodified cohttp-lwt-unix, recompiled",
+      "50 conn x 200 req, GET /, new connection per request", "requests / second",
       [("cohttp-eio", 7935, ORANGE),
-       ("cohttp-lwt (effect core, io_uring)", 5864, BLUE),
-       ("cohttp-lwt (classic core, io_uring)", 4999, GREY),
-       ("cohttp-lwt (classic core, epoll)", 4829, GREY),
-       ("cohttp-lwt (effect core, epoll)", 4692, BLUE)],
+       ("cohttp-lwt (effect core, io_uring)", 7572, BLUE),
+       ("cohttp-lwt (classic core, io_uring)", 7233, GREY),
+       ("cohttp-lwt (effect core, epoll)", 6936, BLUE),
+       ("cohttp-lwt (classic core, epoll)", 6352, GREY)],
       lower_better=False)
