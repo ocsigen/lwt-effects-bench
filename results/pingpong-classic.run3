@@ -1,0 +1,33 @@
+Ping-pong over a socketpair (payload sweep; Lwt core: classic)
+
+backend                              size us/round-trip           MB/s
+Lwt bytes [classic]                     1        13.65            0.1
+Lwt bytes [classic]                    64        13.78            9.3
+Lwt bytes [classic]                  1024        13.64          150.1
+Lwt bytes [classic]                 16384        17.93         1827.9
+Lwt bytes [classic]                262144       133.26         3934.3
+Lwt bigarray [classic]                  1        14.05            0.1
+Lwt bigarray [classic]                 64        15.11            8.5
+Lwt bigarray [classic]               1024        13.30          154.0
+Lwt bigarray [classic]              16384        16.13         2032.1
+Lwt bigarray [classic]             262144       130.83         4007.3
+Eio (io_uring)                          1         8.56            0.2
+Eio (io_uring)                         64         8.39           15.2
+Eio (io_uring)                       1024         8.58          238.8
+Eio (io_uring)                      16384        15.85         2067.2
+Eio (io_uring)                     262144       109.09         4806.0
+Miou                                    1        33.07            0.1
+Miou                                   64        31.74            4.0
+Miou                                 1024        31.89           64.2
+Miou                                16384        37.81          866.6
+Miou                               262144       248.89         2106.5
+Lwt bytes [classic]+uring               1        11.22            0.2
+Lwt bytes [classic]+uring              64        12.35           10.4
+Lwt bytes [classic]+uring            1024        13.07          156.8
+Lwt bytes [classic]+uring           16384        24.30         1348.6
+Lwt bytes [classic]+uring          262144       638.35          821.3
+Lwt bigarray [classic]+uring            1        10.08            0.2
+Lwt bigarray [classic]+uring           64        10.38           12.3
+Lwt bigarray [classic]+uring         1024        10.14          201.9
+Lwt bigarray [classic]+uring        16384        15.80         2073.4
+Lwt bigarray [classic]+uring       262144       101.30         5175.6

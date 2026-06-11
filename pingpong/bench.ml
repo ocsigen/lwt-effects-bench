@@ -1,15 +1,19 @@
 (* Ping-pong over a socketpair: a client and a server fiber exchange a message
-   of [size] bytes back and forth [rt] times. The same workload is run on five
-   schedulers/back ends, for a payload-size sweep:
+   of [size] bytes back and forth [rt] times, for a payload-size sweep.
 
-   - classic Lwt (Lwt_unix, epoll);
-   - Lwt_effects over Lwt_engine (epoll);
-   - Lwt_effects over io_uring;
-   - Eio (eio_linux: io_uring);
-   - Miou (miou.unix).
+   The Lwt configurations use ONLY the public Lwt API; which core they run on
+   (classic or effect-based) is the [vendor/lwt] checkout. Set
+   [BENCH_CORE=classic|effects] to label the output. Two Lwt I/O variants:
 
-   We report per-round-trip latency and the throughput (each round trip moves
-   [size] bytes in each direction). *)
+   - bytes: [Lwt_unix.read/write] (under io_uring this path pays a
+     bytes<->Cstruct copy per call — worst case);
+   - bigarray: [Lwt_bytes.read/write], the path [Lwt_io] (and therefore
+     cohttp & co) actually uses — copy-free under io_uring.
+
+   TWO-PASS EXECUTION: [Lwt_uring.set ()] installs the io_uring engine
+   process-globally with no way back, so the default-engine configurations and
+   Eio/Miou are measured FIRST, then the engine is installed once, then the
+   io_uring rows. *)
 
 let sizes = [ 1; 64; 1024; 16384; 262144 ]
 
@@ -30,7 +34,7 @@ let measure ~size ~rt (f : size:int -> rt:int -> unit) : result =
 let pair () = Unix.socketpair Unix.PF_UNIX Unix.SOCK_STREAM 0
 
 (* ------------------------------------------------------------------ *)
-(* classic Lwt                                                        *)
+(* Lwt, bytes path (Lwt_unix.read/write)                              *)
 (* ------------------------------------------------------------------ *)
 
 let bench_lwt ~size ~rt =
@@ -66,135 +70,39 @@ let bench_lwt ~size ~rt =
   Unix.close b
 
 (* ------------------------------------------------------------------ *)
-(* Lwt_effects, monadic Compat style (the drop-in model: every          *)
-(* interruptible call returns a promise; implicit concurrency preserved) *)
+(* Lwt, bigarray path (Lwt_bytes.read/write — the Lwt_io/cohttp path) *)
 (* ------------------------------------------------------------------ *)
 
-let bench_compat ~size ~rt =
-  let open Lwt_effects in
-  let open Lwt_effects.Compat in
+let bench_lwt_bigarray ~size ~rt =
   let a, b = pair () in
-  Unix.set_nonblock a;
-  Unix.set_nonblock b;
-  let msg = Bytes.make size 'x' in
-  let cbuf = Bytes.create size and sbuf = Bytes.create size in
-  let rec write_all fd off len =
-    if len = 0 then return_unit
-    else Io.write_m fd msg off len >>= fun n -> write_all fd (off + n) (len - n)
+  let la = Lwt_unix.of_unix_file_descr a and lb = Lwt_unix.of_unix_file_descr b in
+  let msg = Lwt_bytes.create size in
+  Lwt_bytes.fill msg 0 size 'x';
+  let cbuf = Lwt_bytes.create size and sbuf = Lwt_bytes.create size in
+  let open Lwt.Infix in
+  let rec write_all fd buf off len =
+    if len = 0 then Lwt.return_unit
+    else Lwt_bytes.write fd buf off len >>= fun n -> write_all fd buf (off + n) (len - n)
   in
   let rec read_exact fd buf off len =
-    if len = 0 then return_unit
+    if len = 0 then Lwt.return_unit
     else
-      Io.read_m fd buf off len >>= fun n ->
-      if n = 0 then fail End_of_file else read_exact fd buf (off + n) (len - n)
+      Lwt_bytes.read fd buf off len >>= fun n ->
+      if n = 0 then Lwt.fail End_of_file else read_exact fd buf (off + n) (len - n)
   in
   let rec client n =
-    if n = 0 then return_unit
+    if n = 0 then Lwt.return_unit
     else
-      write_all a 0 size >>= fun () ->
-      read_exact a cbuf 0 size >>= fun () -> client (n - 1)
+      write_all la msg 0 size >>= fun () ->
+      read_exact la cbuf 0 size >>= fun () -> client (n - 1)
   in
   let rec server n =
-    if n = 0 then return_unit
+    if n = 0 then Lwt.return_unit
     else
-      read_exact b sbuf 0 size >>= fun () ->
-      write_all b 0 size >>= fun () -> server (n - 1)
+      read_exact lb sbuf 0 size >>= fun () ->
+      write_all lb msg 0 size >>= fun () -> server (n - 1)
   in
-  run (fun () -> both (client rt) (server rt) >>= fun _ -> return_unit);
-  Unix.close a;
-  Unix.close b
-
-(* Monadic Compat style over io_uring: async typing AND io_uring speed. *)
-let bench_compat_uring ~size ~rt =
-  let open Lwt_effects in
-  let open Lwt_effects.Compat in
-  let module U = Lwt_effects_uring in
-  let a, b = pair () in
-  let msg = Cstruct.create size in
-  Cstruct.memset msg (Char.code 'x');
-  let cbuf = Cstruct.create size and sbuf = Cstruct.create size in
-  let rec write_all fd cs =
-    if Cstruct.length cs = 0 then return_unit
-    else U.Io.write_m fd cs >>= fun n -> write_all fd (Cstruct.shift cs n)
-  in
-  let rec read_exact fd cs =
-    if Cstruct.length cs = 0 then return_unit
-    else
-      U.Io.read_m fd cs >>= fun n ->
-      if n = 0 then fail End_of_file else read_exact fd (Cstruct.shift cs n)
-  in
-  let rec client n =
-    if n = 0 then return_unit
-    else write_all a msg >>= fun () -> read_exact a cbuf >>= fun () -> client (n - 1)
-  in
-  let rec server n =
-    if n = 0 then return_unit
-    else read_exact b sbuf >>= fun () -> write_all b msg >>= fun () -> server (n - 1)
-  in
-  U.run (fun () -> both (client rt) (server rt) >>= fun _ -> return_unit);
-  Unix.close a;
-  Unix.close b
-
-(* ------------------------------------------------------------------ *)
-(* Lwt_effects, direct style (effect bind + await; loses async typing) *)
-(* ------------------------------------------------------------------ *)
-
-let bench_eff ~size ~rt =
-  let open Lwt_effects in
-  let a, b = pair () in
-  Unix.set_nonblock a;
-  Unix.set_nonblock b;
-  let msg = Bytes.make size 'x' in
-  let cbuf = Bytes.create size and sbuf = Bytes.create size in
-  let write_all fd buf =
-    let off = ref 0 in
-    while !off < size do
-      off := !off + Io.write fd buf !off (size - !off)
-    done
-  in
-  let read_exact fd buf =
-    let off = ref 0 in
-    while !off < size do
-      let n = Io.read fd buf !off (size - !off) in
-      if n = 0 then raise End_of_file;
-      off := !off + n
-    done
-  in
-  run (fun () ->
-    let c = async (fun () -> for _ = 1 to rt do write_all a msg; read_exact a cbuf done; return_unit) in
-    let s = async (fun () -> for _ = 1 to rt do read_exact b sbuf; write_all b msg done; return_unit) in
-    both c s >>= fun _ -> return_unit);
-  Unix.close a;
-  Unix.close b
-
-(* ------------------------------------------------------------------ *)
-(* Lwt_effects over io_uring                                          *)
-(* ------------------------------------------------------------------ *)
-
-let bench_uring ~size ~rt =
-  let open Lwt_effects in
-  let a, b = pair () in
-  let msg = Cstruct.create size in
-  Cstruct.memset msg (Char.code 'x');
-  let cbuf = Cstruct.create size and sbuf = Cstruct.create size in
-  let write_all fd cs =
-    let cs = ref cs in
-    while Cstruct.length !cs > 0 do
-      cs := Cstruct.shift !cs (Lwt_effects_uring.Io.write fd !cs)
-    done
-  in
-  let read_exact fd cs =
-    let cs = ref cs in
-    while Cstruct.length !cs > 0 do
-      let n = Lwt_effects_uring.Io.read fd !cs in
-      if n = 0 then raise End_of_file;
-      cs := Cstruct.shift !cs n
-    done
-  in
-  Lwt_effects_uring.run (fun () ->
-    let c = async (fun () -> for _ = 1 to rt do write_all a msg; read_exact a cbuf done; return_unit) in
-    let s = async (fun () -> for _ = 1 to rt do read_exact b sbuf; write_all b msg done; return_unit) in
-    both c s >>= fun _ -> return_unit);
+  Lwt_main.run (Lwt.join [ client rt; server rt ]);
   Unix.close a;
   Unix.close b
 
@@ -244,40 +152,47 @@ let bench_miou ~size ~rt =
       off := !off + n
     done
   in
-  let client = Miou.async (fun () ->
-    for _ = 1 to rt do Miou_unix.write fa msg; read_exact fa cbuf done)
+  let client =
+    Miou.async (fun () ->
+      for _ = 1 to rt do
+        Miou_unix.write fa msg;
+        read_exact fa cbuf
+      done)
   in
-  let server = Miou.async (fun () ->
-    for _ = 1 to rt do read_exact fb sbuf; Miou_unix.write fb msg done)
+  let server =
+    Miou.async (fun () ->
+      for _ = 1 to rt do
+        read_exact fb sbuf;
+        Miou_unix.write fb msg
+      done)
   in
-  Miou.await_exn client;
-  Miou.await_exn server
+  List.iter (fun p -> Miou.await_exn p) [ client; server ];
+  Miou_unix.close fa;
+  Miou_unix.close fb
 
 (* ------------------------------------------------------------------ *)
 
-let backends =
-  [
-    ("Lwt (epoll)", bench_lwt);
-    ("Lwt_effects Compat (epoll)", bench_compat);
-    ("Lwt_effects Compat (io_uring)", bench_compat_uring);
-    ("Lwt_effects direct (epoll)", bench_eff);
-    ("Lwt_effects direct (io_uring)", bench_uring);
-    ("Eio (io_uring)", bench_eio);
-    ("Miou", bench_miou);
-  ]
-
-let () =
-  Printf.printf "Ping-pong over a socketpair (payload-size sweep)\n\n%!";
-  Printf.printf "%-24s %10s %12s %14s\n" "backend" "size" "us/round-trip"
-    "throughput MB/s";
+let run_config name f =
   List.iter
     (fun size ->
       let rt = round_trips size in
-      List.iter
-        (fun (name, f) ->
-          let r = measure ~size ~rt f in
-          Printf.printf "%-24s %10d %12.2f %14.1f\n%!" name size r.us_per_rt
-            r.mb_per_s)
-        backends;
-      print_newline ())
+      let r = measure ~size ~rt f in
+      Printf.printf "%-30s %10d %12.2f %14.1f\n%!" name size r.us_per_rt
+        r.mb_per_s)
     sizes
+
+let () =
+  let core = try Sys.getenv "BENCH_CORE" with Not_found -> "?" in
+  Printf.printf "Ping-pong over a socketpair (payload sweep; Lwt core: %s)\n\n%!"
+    core;
+  Printf.printf "%-30s %10s %12s %14s\n" "backend" "size" "us/round-trip"
+    "MB/s";
+  (* Pass 1: default engine + Eio + Miou. *)
+  run_config (Printf.sprintf "Lwt bytes [%s]" core) bench_lwt;
+  run_config (Printf.sprintf "Lwt bigarray [%s]" core) bench_lwt_bigarray;
+  run_config "Eio (io_uring)" bench_eio;
+  run_config "Miou" bench_miou;
+  (* Pass 2: the io_uring engine, installed process-globally. *)
+  Lwt_uring.set ();
+  run_config (Printf.sprintf "Lwt bytes [%s]+uring" core) bench_lwt;
+  run_config (Printf.sprintf "Lwt bigarray [%s]+uring" core) bench_lwt_bigarray

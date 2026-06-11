@@ -1,0 +1,4 @@
+Monadic bind chains (Lwt core: effects)
+
+  resolved bind [effects]         0.056 s      11.1 ns/op      9.04 words/op
+  suspended bind [effects]        0.125 s     125.2 ns/op     61.07 words/op

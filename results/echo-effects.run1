@@ -1,0 +1,6 @@
+Echo TCP: 100 connections x 1000 messages of 64 bytes (Lwt core: effects)
+
+  Lwt [effects]               2.308 s         43330 rt/s
+  Eio (io_uring)              1.687 s         59281 rt/s
+  Miou                        6.781 s         14748 rt/s
+  Lwt [effects]+uring         1.937 s         51620 rt/s

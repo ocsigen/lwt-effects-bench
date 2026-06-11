@@ -1,4 +1,4 @@
 (executable
  (name bench)
  (enabled_if (>= %{ocaml_version} "5.0"))
- (libraries lwt lwt.unix lwt_direct eio eio_main miou unix))
+ (libraries lwt lwt.unix unix))

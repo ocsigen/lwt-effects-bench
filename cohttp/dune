@@ -1,11 +1,9 @@
-(executables
- (names bench bench_native)
+(executable
+ (name bench)
  (libraries
   lwt
   lwt.unix
-  lwt_effects
-  lwt_effects_uring
-  cstruct
+  lwt_uring
   cohttp
   cohttp-lwt-unix
   cohttp-eio

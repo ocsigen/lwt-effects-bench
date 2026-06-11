@@ -1,0 +1,6 @@
+Scheduling: 1000 fibers x 1000 yields = 1000000 yields (Lwt core: classic)
+
+  Lwt [classic]               0.343 s     343.2 ns/yield     67.04 words/yield
+  Lwt_direct [classic]        0.224 s     223.6 ns/yield     18.07 words/yield
+  Eio                         0.144 s     144.2 ns/yield     40.12 words/yield
+  Miou                        0.590 s     590.2 ns/yield     66.68 words/yield

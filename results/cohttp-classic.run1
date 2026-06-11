@@ -1,0 +1,5 @@
+HTTP cohttp: 50 connections x 200 requests (GET /; Lwt core: classic)
+
+  cohttp-lwt-unix [classic]             1.828 s        5471 req/s
+  cohttp-eio                            1.260 s        7935 req/s
+  cohttp-lwt-unix [classic]+uring       1.722 s        5806 req/s

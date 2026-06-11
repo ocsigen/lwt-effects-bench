@@ -1,0 +1,4 @@
+Monadic bind chains (Lwt core: classic)
+
+  resolved bind [classic]         0.089 s      17.8 ns/op     25.02 words/op
+  suspended bind [classic]        1.723 s    1722.9 ns/op     88.03 words/op

@@ -1,0 +1,33 @@
+Ping-pong over a socketpair (payload sweep; Lwt core: effects)
+
+backend                              size us/round-trip           MB/s
+Lwt bytes [effects]                     1        14.82            0.1
+Lwt bytes [effects]                    64        12.87            9.9
+Lwt bytes [effects]                  1024        13.75          148.9
+Lwt bytes [effects]                 16384        19.10         1715.2
+Lwt bytes [effects]                262144       129.55         4047.1
+Lwt bigarray [effects]                  1        14.63            0.1
+Lwt bigarray [effects]                 64        14.02            9.1
+Lwt bigarray [effects]               1024        14.01          146.2
+Lwt bigarray [effects]              16384        19.58         1673.6
+Lwt bigarray [effects]             262144       134.30         3903.9
+Eio (io_uring)                          1         9.33            0.2
+Eio (io_uring)                         64         8.64           14.8
+Eio (io_uring)                       1024         9.21          222.3
+Eio (io_uring)                      16384        12.81         2558.1
+Eio (io_uring)                     262144        98.64         5315.3
+Miou                                    1        31.15            0.1
+Miou                                   64        32.66            3.9
+Miou                                 1024        31.91           64.2
+Miou                                16384        45.11          726.4
+Miou                               262144       244.30         2146.1
+Lwt bytes [effects]+uring               1        10.20            0.2
+Lwt bytes [effects]+uring              64         8.59           14.9
+Lwt bytes [effects]+uring            1024        11.43          179.2
+Lwt bytes [effects]+uring           16384        20.30         1614.3
+Lwt bytes [effects]+uring          262144       509.15         1029.7
+Lwt bigarray [effects]+uring            1         9.02            0.2
+Lwt bigarray [effects]+uring           64         8.58           14.9
+Lwt bigarray [effects]+uring         1024         8.87          230.9
+Lwt bigarray [effects]+uring        16384        13.01         2517.9
+Lwt bigarray [effects]+uring       262144        94.69         5536.7

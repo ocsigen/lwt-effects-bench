@@ -1,21 +1,24 @@
 (* HTTP throughput with cohttp: an in-process server answers a fixed body to
-   GET /, hit by [conns] concurrent client fibers doing [reqs] requests each.
+   GET /, hit by [conns] concurrent client fibers doing [reqs] requests each
+   (Client.get: new connection per request).
 
-   The interesting comparison: the *same* cohttp-lwt-unix code, run under
-   Lwt_main vs under the Lwt_effects scheduler (via the Lwt interop) — does the
-   cheaper bind/scheduling speed up a real HTTP stack? A cohttp-eio variant is
-   included as an external reference. *)
+   The interesting comparison: the *same, unmodified* cohttp-lwt-unix code on
+   the classic Lwt core vs on the effect-based core — the library is simply
+   recompiled against the lwt pinned in the opam switch. Set
+   [BENCH_CORE=classic|effects] to label the output accordingly. A second pass
+   installs the io_uring engine ([Lwt_uring.set ()], process-global) and runs
+   the same cohttp-lwt workload again. cohttp-eio is the external reference. *)
 
 let conns = 50
 let reqs = 200
 let total = conns * reqs
 
 let report name dt =
-  Printf.printf "  %-30s %8.3f s  %10.0f req/s\n%!" name dt
+  Printf.printf "  %-34s %8.3f s  %10.0f req/s\n%!" name dt
     (float_of_int total /. dt)
 
 (* ------------------------------------------------------------------ *)
-(* cohttp-lwt-unix scenario (shared by the Lwt_main and Lwt_effects runs) *)
+(* cohttp-lwt-unix scenario                                            *)
 (* ------------------------------------------------------------------ *)
 
 module LServer = Cohttp_lwt_unix.Server
@@ -44,10 +47,6 @@ let lwt_scenario ~port () =
   srv >>= fun () -> Lwt.return dt
 
 let run_lwt ~port = Lwt_main.run (lwt_scenario ~port ())
-
-let run_lwt_effects ~port =
-  Lwt_effects.run (fun () ->
-    Lwt_effects.return (Lwt_effects.await_lwt (lwt_scenario ~port ())))
 
 (* ------------------------------------------------------------------ *)
 (* cohttp-eio                                                         *)
@@ -85,7 +84,16 @@ let run_eio ~port =
 (* ------------------------------------------------------------------ *)
 
 let () =
-  Printf.printf "HTTP cohttp: %d connections x %d requests (GET /)\n\n%!" conns reqs;
-  report "cohttp-lwt-unix (Lwt_main)" (run_lwt ~port:18931);
-  report "cohttp-lwt-unix (Lwt_effects)" (run_lwt_effects ~port:18932);
-  report "cohttp-eio" (run_eio ~port:18933)
+  let core = try Sys.getenv "BENCH_CORE" with Not_found -> "?" in
+  Printf.printf "HTTP cohttp: %d connections x %d requests (GET /; Lwt core: %s)\n\n%!"
+    conns reqs core;
+  (* Pass 1: default engine + cohttp-eio. *)
+  report
+    (Printf.sprintf "cohttp-lwt-unix [%s]" core)
+    (run_lwt ~port:18931);
+  report "cohttp-eio" (run_eio ~port:18933);
+  (* Pass 2: the io_uring engine, installed process-globally. *)
+  Lwt_uring.set ();
+  report
+    (Printf.sprintf "cohttp-lwt-unix [%s]+uring" core)
+    (run_lwt ~port:18934)

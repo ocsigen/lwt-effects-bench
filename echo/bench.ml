@@ -5,6 +5,12 @@
    and ping-pong [msgs] times each. Everything runs concurrently in one process,
    so this stresses concurrency/scalability, not just per-call latency.
 
+   The Lwt configuration uses ONLY the public Lwt API; which core it runs on
+   (classic or effect-based) is the [vendor/lwt] checkout. Set
+   [BENCH_CORE=classic|effects] to label the output. TWO-PASS EXECUTION:
+   [Lwt_uring.set ()] is process-global, so the default-engine run and
+   Eio/Miou are measured first, then the engine is installed once.
+
    Reported: total time and round-trips per second (conns * msgs round-trips). *)
 
 let conns = 100
@@ -34,7 +40,7 @@ let make_listener () =
   (s, port)
 
 (* ------------------------------------------------------------------ *)
-(* classic Lwt                                                        *)
+(* Lwt                                                                *)
 (* ------------------------------------------------------------------ *)
 
 let bench_lwt () =
@@ -81,214 +87,6 @@ let bench_lwt () =
   Lwt_main.run
     (Lwt.join [ server (); Lwt.join (List.init conns (fun _ -> client ())) ]);
   Lwt_main.run (Lwt_unix.close lls)
-
-(* ------------------------------------------------------------------ *)
-(* Lwt_effects over Lwt_engine                                        *)
-(* ------------------------------------------------------------------ *)
-
-(* Monadic Compat style: every interruptible call returns a promise. *)
-let bench_compat () =
-  let open Lwt_effects in
-  let open Lwt_effects.Compat in
-  let ls, port = make_listener () in
-  Unix.set_nonblock ls;
-  let msg = Bytes.make size 'x' in
-  let rec write_all fd off len =
-    if len = 0 then return_unit
-    else Io.write_m fd msg off len >>= fun n -> write_all fd (off + n) (len - n)
-  in
-  let rec read_exact fd buf off len =
-    if len = 0 then return_unit
-    else
-      Io.read_m fd buf off len >>= fun n ->
-      if n = 0 then fail End_of_file else read_exact fd buf (off + n) (len - n)
-  in
-  let handler fd =
-    let buf = Bytes.create size in
-    let rec loop i =
-      if i = 0 then (Unix.close fd; return_unit)
-      else
-        read_exact fd buf 0 size >>= fun () ->
-        write_all fd 0 size >>= fun () -> loop (i - 1)
-    in
-    loop msgs
-  in
-  let client () =
-    let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-    Unix.set_nonblock s;
-    Io.connect_m s (Unix.ADDR_INET (loopback, port)) >>= fun () ->
-    let buf = Bytes.create size in
-    let rec loop i =
-      if i = 0 then (Unix.close s; return_unit)
-      else
-        write_all s 0 size >>= fun () ->
-        read_exact s buf 0 size >>= fun () -> loop (i - 1)
-    in
-    loop msgs
-  in
-  let rec accept_loop n acc =
-    if n = 0 then return acc
-    else
-      Io.accept_m ls >>= fun (c, _) ->
-      Unix.set_nonblock c;
-      accept_loop (n - 1) (handler c :: acc)
-  in
-  let server () = accept_loop conns [] >>= fun hs -> join hs in
-  run (fun () ->
-    both (server ()) (join (List.init conns (fun _ -> client ())))
-    >>= fun _ -> return_unit);
-  Unix.close ls
-
-(* Monadic Compat over io_uring: async typing + io_uring speed. *)
-let bench_compat_uring () =
-  let open Lwt_effects in
-  let open Lwt_effects.Compat in
-  let module U = Lwt_effects_uring in
-  let ls, port = make_listener () in
-  Unix.set_nonblock ls;
-  let msg = Cstruct.create size in
-  Cstruct.memset msg (Char.code 'x');
-  let rec write_all fd cs =
-    if Cstruct.length cs = 0 then return_unit
-    else U.Io.write_m fd cs >>= fun n -> write_all fd (Cstruct.shift cs n)
-  in
-  let rec read_exact fd cs =
-    if Cstruct.length cs = 0 then return_unit
-    else
-      U.Io.read_m fd cs >>= fun n ->
-      if n = 0 then fail End_of_file else read_exact fd (Cstruct.shift cs n)
-  in
-  let handler fd =
-    let buf = Cstruct.create size in
-    let rec loop i =
-      if i = 0 then (Unix.close fd; return_unit)
-      else read_exact fd buf >>= fun () -> write_all fd msg >>= fun () -> loop (i - 1)
-    in
-    loop msgs
-  in
-  let client () =
-    let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-    Unix.set_nonblock s;
-    U.Io.connect_m s (Unix.ADDR_INET (loopback, port)) >>= fun () ->
-    Unix.clear_nonblock s;
-    let buf = Cstruct.create size in
-    let rec loop i =
-      if i = 0 then (Unix.close s; return_unit)
-      else write_all s msg >>= fun () -> read_exact s buf >>= fun () -> loop (i - 1)
-    in
-    loop msgs
-  in
-  let rec accept_loop n acc =
-    if n = 0 then return acc
-    else U.Io.accept_m ls >>= fun (c, _) -> accept_loop (n - 1) (handler c :: acc)
-  in
-  let server () = accept_loop conns [] >>= fun hs -> join hs in
-  U.run (fun () ->
-    both (server ()) (join (List.init conns (fun _ -> client ())))
-    >>= fun _ -> return_unit);
-  Unix.close ls
-
-let bench_eff () =
-  let open Lwt_effects in
-  let ls, port = make_listener () in
-  Unix.set_nonblock ls;
-  let msg = Bytes.make size 'x' in
-  let write_all fd =
-    let off = ref 0 in
-    while !off < size do off := !off + Io.write fd msg !off (size - !off) done
-  in
-  let read_exact fd buf =
-    let off = ref 0 in
-    while !off < size do
-      let n = Io.read fd buf !off (size - !off) in
-      if n = 0 then raise End_of_file;
-      off := !off + n
-    done
-  in
-  let handler fd =
-    let buf = Bytes.create size in
-    for _ = 1 to msgs do read_exact fd buf; write_all fd done;
-    Unix.close fd
-  in
-  let client () =
-    let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-    Unix.set_nonblock s;
-    Io.connect s (Unix.ADDR_INET (loopback, port));
-    let buf = Bytes.create size in
-    for _ = 1 to msgs do write_all s; read_exact s buf done;
-    Unix.close s
-  in
-  run (fun () ->
-    let server =
-      async (fun () ->
-        let hs = ref [] in
-        for _ = 1 to conns do
-          let c, _ = Io.accept ls in
-          Unix.set_nonblock c;
-          hs := async (fun () -> handler c; return_unit) :: !hs
-        done;
-        List.iter (fun p -> await p) !hs;
-        return_unit)
-    in
-    let clients = List.init conns (fun _ -> async (fun () -> client (); return_unit)) in
-    await server;
-    List.iter (fun p -> await p) clients;
-    return_unit);
-  Unix.close ls
-
-(* ------------------------------------------------------------------ *)
-(* Lwt_effects over io_uring                                          *)
-(* ------------------------------------------------------------------ *)
-
-let bench_uring () =
-  let open Lwt_effects in
-  let module U = Lwt_effects_uring in
-  let ls, port = make_listener () in
-  Unix.set_nonblock ls;
-  let msg = Cstruct.create size in
-  Cstruct.memset msg (Char.code 'x');
-  let write_all fd =
-    let cs = ref msg in
-    while Cstruct.length !cs > 0 do cs := Cstruct.shift !cs (U.Io.write fd !cs) done
-  in
-  let read_exact fd buf =
-    let cs = ref buf in
-    while Cstruct.length !cs > 0 do
-      let n = U.Io.read fd !cs in
-      if n = 0 then raise End_of_file;
-      cs := Cstruct.shift !cs n
-    done
-  in
-  let handler fd =
-    let buf = Cstruct.create size in
-    for _ = 1 to msgs do read_exact fd buf; write_all fd done;
-    Unix.close fd
-  in
-  let client () =
-    let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-    Unix.set_nonblock s;
-    U.Io.connect s (Unix.ADDR_INET (loopback, port));
-    Unix.clear_nonblock s;
-    let buf = Cstruct.create size in
-    for _ = 1 to msgs do write_all s; read_exact s buf done;
-    Unix.close s
-  in
-  U.run (fun () ->
-    let server =
-      async (fun () ->
-        let hs = ref [] in
-        for _ = 1 to conns do
-          let c, _ = U.Io.accept ls in
-          hs := async (fun () -> handler c; return_unit) :: !hs
-        done;
-        List.iter (fun p -> await p) !hs;
-        return_unit)
-    in
-    let clients = List.init conns (fun _ -> async (fun () -> client (); return_unit)) in
-    await server;
-    List.iter (fun p -> await p) clients;
-    return_unit);
-  Unix.close ls
 
 (* ------------------------------------------------------------------ *)
 (* Eio (eio_linux: io_uring)                                          *)
@@ -382,12 +180,13 @@ let bench_miou () =
 (* ------------------------------------------------------------------ *)
 
 let () =
-  Printf.printf "Echo TCP: %d connections x %d messages of %d bytes\n\n%!" conns
-    msgs size;
-  measure "Lwt (epoll)" bench_lwt;
-  measure "Lwt_effects Compat (epoll)" bench_compat;
-  measure "Lwt_effects Compat (io_uring)" bench_compat_uring;
-  measure "Lwt_effects direct (epoll)" bench_eff;
-  measure "Lwt_effects direct (io_uring)" bench_uring;
+  let core = try Sys.getenv "BENCH_CORE" with Not_found -> "?" in
+  Printf.printf "Echo TCP: %d connections x %d messages of %d bytes (Lwt core: %s)\n\n%!"
+    conns msgs size core;
+  (* Pass 1: default engine + Eio + Miou. *)
+  measure (Printf.sprintf "Lwt [%s]" core) bench_lwt;
   measure "Eio (io_uring)" bench_eio;
-  measure "Miou" bench_miou
+  measure "Miou" bench_miou;
+  (* Pass 2: the io_uring engine, installed process-globally. *)
+  Lwt_uring.set ();
+  measure (Printf.sprintf "Lwt [%s]+uring" core) bench_lwt
