@@ -64,21 +64,21 @@ slightly below the classic core), and the full Lwt semantics are preserved
 
 | 1000 fibers × 1000 yields | ns/yield | words/yield |
 |---|---|---|
-| Eio | **79** | 40 |
-| Lwt_direct (either core) | 130–146 | **18** |
+| **Lwt_direct (effect core)** | **71–83** | **16** |
+| Eio | 86–102 | 40 |
+| Lwt_direct (classic core) | 130–151 | 18 |
 | Lwt (effect core, `pause`) | 207 | 61 |
 | Lwt (classic core, `pause`) | 225 | 67 |
 | Miou | 409 | 67 |
 
 The effect core is ~8 % faster than the classic one on the monadic `pause`
-storm, and `Lwt_direct` — unchanged, on either core — is the cheap direct
-style (18 words/yield). The POC's famous 52–59 ns bar was its *direct-style
-yield running on the scheduler itself*; that configuration was deliberately
-not kept as `Lwt.bind` (it changes Lwt's semantics), and `Lwt_direct` today
-pays its own task-queue + hook indirection on top of the same scheduler.
-Re-plumbing `Lwt_direct` onto the core's run queue (the scheduler hooks are
-already in `Lwt.Private`) should recover most of the 130 → 59 ns gap — future
-work, see below.
+storm — and **direct style on the effect core is now faster than Eio**, with
+the lowest allocation of the table. `Lwt_direct` was re-plumbed onto the
+core's own run queue (`Lwt.Private.scheduler_enqueue`): a yield is one queue
+push/pop — no private task queue, no `Lwt_main` hook pump, no engine
+round-trip per batch — essentially recovering the POC's direct-on-scheduler
+bar (52–59 ns) behind `Lwt_direct`'s unchanged public API. (On the classic
+core `Lwt_direct` keeps its hook-based implementation, hence the 130–151 ns.)
 
 ### 3. Ping-pong latency (socketpair, payload sweep)
 
@@ -163,15 +163,22 @@ the cause is identified and none of it is the effect core itself:
    suspended bind, ~2× on resolved bind, ~8 % on the pause storm, parity to
    +6 % on echo/pingpong/cohttp.
 2. **Unchanged Lwt code on io_uring is at or above Eio level** on raw-I/O
-   workloads (echo +9 %, pingpong tie), and cohttp-lwt reaches cohttp-eio
-   territory.
-3. The POC's remaining margins are the two deliberately-dropped trades
-   (direct-style default bind; private-ring I/O without `Lwt_unix`), and the
-   direct-style one is recoverable compatibly by slimming `Lwt_direct` onto
-   the core scheduler.
+   workloads (echo statistical tie to ahead, pingpong tie), and **direct
+   style (`Lwt_direct`, slimmed onto the core scheduler) is faster than Eio
+   on scheduling** (71–83 vs 86–102 ns/yield, 16 vs 40 words).
+3. cohttp-lwt is within ~3–5 % of cohttp-eio under a clean A/B, entirely
+   explained by the **connection-lifecycle syscalls** of the
+   new-connection-per-request model: strace shows ~13 syscalls per request
+   on the Lwt side (`socket`, 2×`fcntl`, 2×`setsockopt`,
+   `connect`+`getsockopt`, `accept`, ~2.7×`close`) where eio_linux uses
+   uring-native socket ops. The I/O itself is already optimally batched
+   (fewer `io_uring_enter` than Eio). Closing this needs multishot accept /
+   `socket`/`close` ops in ocaml-uring (only `close` is exposed today) — or
+   simply a keep-alive workload, which amortizes the setup away.
 4. **Protocol matters**: non-interleaved passes under varying load produced
    phantom regressions of 10–20 %. Per-core binaries, alternated in the same
-   window, removed them entirely.
+   window, removed them entirely. (Also: never `taskset` a uring benchmark
+   to one core — the kernel io-wq workers inherit the affinity mask.)
 
 ## Reproducing
 

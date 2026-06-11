@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="248" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
-<rect width="760" height="248" fill="white"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="286" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
+<rect width="760" height="286" fill="white"/>
 <text x="16" y="24" font-size="16" font-weight="700">Scheduling - pure cooperative yielding</text>
 <text x="16" y="42" fill="#5f6368">1000 fibers x 1000 yields, no I/O — lower is better ↓ (ns per yield)</text>
 <text x="240" y="72" text-anchor="end">Miou</text>
@@ -11,10 +11,13 @@
 <text x="240" y="148" text-anchor="end">Lwt (effect core)</text>
 <rect x="250" y="130" width="223" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
 <text x="481" y="148" fill="#202124">207</text>
-<text x="240" y="186" text-anchor="end">Lwt_direct (either core)</text>
+<text x="240" y="186" text-anchor="end">Lwt_direct (classic core)</text>
 <rect x="250" y="168" width="140" height="26" rx="3" fill="#188038" opacity="0.72"/>
 <text x="398" y="186" fill="#202124">130</text>
-<text x="240" y="224" text-anchor="end" font-weight="700">Eio</text>
-<rect x="250" y="206" width="85" height="26" rx="3" fill="#e8710a"/>
-<text x="343" y="224" fill="#202124" font-weight="700">79.0 ★</text>
+<text x="240" y="224" text-anchor="end">Eio</text>
+<rect x="250" y="206" width="93" height="26" rx="3" fill="#e8710a" opacity="0.72"/>
+<text x="351" y="224" fill="#202124">86.0</text>
+<text x="240" y="262" text-anchor="end" font-weight="700">Lwt_direct (effect core)</text>
+<rect x="250" y="244" width="77" height="26" rx="3" fill="#188038"/>
+<text x="335" y="262" fill="#202124" font-weight="700">72.0 ★</text>
 </svg>

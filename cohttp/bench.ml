@@ -84,6 +84,9 @@ let run_eio ~port =
 (* ------------------------------------------------------------------ *)
 
 let () =
+  (match Sys.getenv_opt "LWT_IO_BUF" with
+  | Some s -> Lwt_io.set_default_buffer_size (int_of_string s)
+  | None -> ());
   let core = try Sys.getenv "BENCH_CORE" with Not_found -> "?" in
   Printf.printf "HTTP cohttp: %d connections x %d requests (GET /; Lwt core: %s)\n\n%!"
     conns reqs core;

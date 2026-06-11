@@ -71,8 +71,9 @@ chart(p("swap-scheduling.svg"),
       [("Miou", 409, PURPLE),
        ("Lwt (classic core)", 225, GREY),
        ("Lwt (effect core)", 207, BLUE),
-       ("Lwt_direct (either core)", 130, GREEN),
-       ("Eio", 79, ORANGE)],
+       ("Lwt_direct (classic core)", 130, GREEN),
+       ("Eio", 86, ORANGE),
+       ("Lwt_direct (effect core)", 72, GREEN)],
       lower_better=True)
 
 chart(p("swap-bind.svg"),
