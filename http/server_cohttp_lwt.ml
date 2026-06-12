@@ -6,6 +6,10 @@
 let text = Alice.text
 let plaintext = "Hello, World!"
 
+(* Diagnostic toggle: NOPAUSE=1 skips the per-request [Lwt.pause ()] to test
+   whether the pause machinery drives the effect core's major-GC marking. *)
+let nopause = try Sys.getenv "NOPAUSE" = "1" with Not_found -> false
+
 module BenchmarkServer = struct
   let benchmark =
     let headers =
@@ -21,12 +25,20 @@ module BenchmarkServer = struct
       let open Lwt in
       let open Cohttp_lwt_unix in
       let uri = Request.uri req in
-      Lwt.pause () >>= fun () ->
+      (if nopause then Lwt.return_unit else Lwt.pause ()) >>= fun () ->
       match Uri.path uri with
       | "/" -> Server.respond_string ~headers ~status:`OK ~body:text ()
       | "/plaintext" ->
         Server.respond_string ~headers:pt_headers ~status:`OK ~body:plaintext ()
       | "/exit" -> exit 0
+      | "/gc" ->
+        (* True live set under load: full major collects floating garbage,
+           then live_words is the genuinely-reachable size. *)
+        Gc.full_major ();
+        let s = Gc.stat () in
+        Server.respond_string ~status:`OK
+          ~body:(Printf.sprintf "live_words=%d heap_words=%d top_heap_words=%d\n"
+                   s.live_words s.heap_words s.top_heap_words) ()
       | _ -> Server.respond_not_found ()
     in
     handler
@@ -43,6 +55,20 @@ let main port max_active io_buf uring =
       (Server.make ~callback:handler ())
   in
   Lwt_main.run server
+
+(* Deterministic per-request cost signal (thermal-insensitive), dumped on
+   [/exit]: cumulative minor words allocated + GC collection counts. Divide by
+   wrk's reported request count to compare cores. *)
+let () =
+  at_exit (fun () ->
+    let s = Gc.quick_stat () in
+    Printf.eprintf
+      "GCDUMP minor_words=%.0f promoted_words=%.0f major_words=%.0f \
+       minor_colls=%d major_colls=%d compactions=%d \
+       heap_words=%d top_heap_words=%d live_words=%d\n%!"
+      (Gc.minor_words ()) s.promoted_words s.major_words
+      s.minor_collections s.major_collections s.compactions
+      s.heap_words s.top_heap_words (Gc.stat ()).live_words)
 
 let () =
   let port = ref 8080 in

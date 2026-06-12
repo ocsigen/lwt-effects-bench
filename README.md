@@ -17,12 +17,20 @@ flavours, hand-written cohttp backend) is preserved unchanged in
 were re-measured during this campaign to calibrate against it (see
 [Comparing with the POC](#comparing-with-the-poc)).
 
+The realistic HTTP suite ([§6](#6-realistic-http-benchmarks--replicated-from-existing-suites))
+earned its keep: it surfaced a **waiter leak in the effect core's
+`choose`/`pick`** that no in-process micro-benchmark showed, fixed the same
+day (`856e73f18`) — the numbers in §6 are post-fix.
+
 > ⚠️ Micro-benchmarks, one (laptop) machine, loopback I/O. A first run of this
 > campaign (2026-06-11) measured the two cores in separate, non-interleaved
 > passes and was skewed by varying machine load — it wrongly suggested
 > regressions. The numbers below use a **strict A/B protocol**: one binary per
-> core, saved, then run *alternating* in the same machine window. Treat <10 %
-> as noise; ratios over absolutes.
+> core, saved, then run *alternating* in the same machine window. Two more
+> traps cost us a day each: after ~12 min of continuous benching this laptop
+> throttles (~85 °C, `powersave` governor) and throws 100–700 ms p99 spikes
+> at whichever server runs last; and a leak only shows up under minutes of
+> *external* sustained load. Treat <10 % as noise; ratios over absolutes.
 
 ## What is being compared
 
@@ -217,32 +225,66 @@ io_uring — `conf-libev` is now installed, so the libev rows are real libev),
 cohttp-eio (retro's, debug logging off), httpcats/Miou (theirs). Sources and
 runner in [http/](http/).
 
-| config | saturation (req/s, /plaintext) | p99 @5k | p99 @10k | p99 @20k (µs→ms) |
+**This suite found a real bug.** Its first pass (2026-06-12 morning) showed
+the effect core with a catastrophic latency tail (p99 36–120 ms at 20 k req/s
+vs classic's 18–20 ms) and −12 % saturation throughput — neither visible in
+any in-process micro-benchmark above. Root-causing it (perf, callgrind, olly,
+GC counters, and finally `live_words` sampled after `Gc.full_major` *under
+load*) ended at a genuine **memory leak**: the effect core's waiter lists had
+no removal mechanism — `Lwt.choose`/`pick` added a waiter to *every* promise
+of their list and never removed the losers' when one resolved. A long-lived
+promise repeatedly passed to `pick` (as conduit does, once per connection,
+against the server's shutdown promise) accumulated dead waiters without
+bound: live heap grew ~2.2 M words/s, linear, unbounded; the ballooning heap
+made major-GC marking ~4× classic's (`do_some_marking` 8.5 % vs 2.3 % of
+self-time, max GC pause 62 ms vs 1.7 ms) — the tail and the throughput gap
+were both symptoms. Classic Lwt avoids exactly this with its
+explicitly-removable callbacks ("added mainly by `Lwt.choose`"); the same
+mechanism is now in the effect core
+([`856e73f18`](https://github.com/ocsigen/lwt/commit/856e73f18): a shared-cell
+waiter that detaches from the still-pending promises when it first fires —
+`choose`/`pick`/`nchoose`/`nchoose_split`/`npick` and the
+`protected`/`wrap_in_cancelable` mirrors), with the whole historical suite
+still green. After the fix, the effect core's live set is flat under load and
+its max GC pause (1.0 ms) is the best of the table.
+
+Numbers **with the fix** (strictly interleaved, ≥2 rounds per cell, medians
+for latency, means for throughput; the cohttp-eio and httpcats rows are from
+the same day's earlier window):
+
+| config | saturation (req/s, /plaintext) | p99 @5k | p99 @10k | p99 @20k |
 |---|---|---|---|---|
 | cohttp-eio | **68–82k** | **4.0 ms** | **4.6 ms** | 8.5 ms |
-| Lwt classic, io_uring | 44.1–44.6k | 6.0 ms | 7.6 ms | 20.2 ms |
-| Lwt effect core, io_uring | 38.8–39.4k | 4.9 ms | 12.3 ms | 36–84 ms ⚠ |
-| Lwt classic, libev | 34–35k | 5.2 ms | 14.5 ms | 18.6 ms |
-| Lwt effect core, libev | 34k | 6.9 ms | 12.1 ms | 36–120 ms ⚠ |
+| Lwt classic, io_uring | 45.0k | 5.9 ms | 10.6 ms | 13.1 ms |
+| Lwt effect core, io_uring | 43.1k (−4.3 %) | 5.5 ms | 11.6 ms | 17.3 ms |
+| Lwt classic, libev | 35.5k | 4.9 ms | 9.5 ms | 16.4 ms |
+| Lwt effect core, libev | 35.0k (−1.4 %) | 6.2 ms | 11.4 ms | 18.5 ms |
 | httpcats (Miou, 1 domain) | 32.6k | 8.1 ms | 7.8 ms | **5.2 ms** |
 
-Honest findings — this is exactly what the realistic suite is for, neither
-shows up in the in-process micro-benchmarks:
+Findings:
 
-1. **The effect core has a tail-latency problem near saturation** (p99
-   36–120 ms at 20k req/s vs classic's 18–20 ms, while its p50 stays fine or
-   better). The signature (good median, terrible tail) points at scheduling
-   fairness under sustained load — first item of the next investigation.
-2. **At saturation the effect core is ~12 % behind classic** on this real
-   server (39k vs 44.6k with io_uring) — the in-process echo showed parity;
-   a sustained real HTTP pipeline does not (suspected: same cause as the
-   tail).
-3. The transparent io_uring engine is worth **+26 %** to classic Lwt at
-   saturation (35k → 44.6k) — its largest measured win, on unchanged code.
+1. **The "tail-latency problem" is gone with the leak fix** — the two cores
+   are at latency parity at every rate on both engines (in a dedicated
+   interleaved 20 k A/B, median p99 came out 16.99 ms effect vs 17.05 ms
+   classic). What remained of the original 36–120 ms after the fix was
+   measurement: this laptop reaches ~85 °C after ~12 min of continuous
+   benching and the `powersave` governor then throws 100–700 ms p99 spikes at
+   *whichever* server runs last — classic included. Cool the machine between
+   long suites and interleave, or distrust the last runs.
+2. **The saturation gap narrowed from ~12 % to −4.3 % (io_uring) / −1.4 %
+   (libev)** — the residual is near this machine's noise floor (the effect
+   core won individual rounds of both metrics).
+3. The transparent io_uring engine is worth **+27 %** to classic Lwt at
+   saturation (35.5k → 45.0k) — its largest measured win, on unchanged code.
 4. httpcats/Miou has the most *stable* latency of the table (p99 5–8 ms at
    every rate) at modest throughput — consistent with its bench report's
    claims about scheduler fairness; cohttp-eio dominates this single-core
    table on both axes.
+5. The leak matters beyond benchmarks: any long-running server doing a
+   `choose`/`pick` per request or connection against a long-lived promise
+   would have leaked on the pre-fix effect core. **A realistic,
+   external-load, minutes-long suite belongs in the methodology** — no
+   in-process micro-benchmark surfaced it.
 
 ## Comparing with the POC
 
@@ -260,10 +302,11 @@ the cause is identified and none of it is the effect core itself:
 
 ## Take-aways
 
-1. **No regression.** With a sound A/B protocol the effect core is at parity
-   or ahead of the classic core on *every* workload measured: ~14.7× on
-   suspended bind, ~2× on resolved bind, ~8 % on the pause storm, parity to
-   +6 % on echo/pingpong/cohttp.
+1. **No regression.** With a sound A/B protocol (and the §6 waiter-leak fix)
+   the effect core is at parity or ahead of the classic core on *every*
+   workload measured: ~14.7× on suspended bind, ~2× on resolved bind, ~8 % on
+   the pause storm, parity to +6 % on echo/pingpong/cohttp, latency parity
+   and −4.3 %/−1.4 % saturation (≈ noise) on the realistic HTTP suite.
 2. **Unchanged Lwt code on io_uring is at or above Eio level** on raw-I/O
    workloads (echo statistical tie to ahead, pingpong tie), and **direct
    style (`Lwt_direct`, slimmed onto the core scheduler) is faster than Eio
@@ -278,9 +321,16 @@ the cause is identified and none of it is the effect core itself:
    `socket`/`close` ops in ocaml-uring (only `close` is exposed today) — or
    simply a keep-alive workload, which amortizes the setup away.
 4. **Protocol matters**: non-interleaved passes under varying load produced
-   phantom regressions of 10–20 %. Per-core binaries, alternated in the same
-   window, removed them entirely. (Also: never `taskset` a uring benchmark
-   to one core — the kernel io-wq workers inherit the affinity mask.)
+   phantom regressions of 10–20 %, and thermal throttling produces phantom
+   tail-latency disasters on whichever server runs last. Per-core binaries,
+   alternated in the same window, on a cooled machine, removed them entirely.
+   (Also: never `taskset` a uring benchmark to one core — the kernel io-wq
+   workers inherit the affinity mask; and `strace -f` hangs on a uring
+   server.)
+5. **Realistic, external-load, minutes-long benchmarks are part of
+   correctness testing**: the §6 suite caught an unbounded waiter leak
+   (`choose`/`pick` against a long-lived promise) that 1200+ unit tests and
+   every in-process micro-benchmark missed.
 
 ## Reproducing
 
@@ -297,11 +347,23 @@ BENCH_CORE=classic ./saved-classic.exe ; BENCH_CORE=effects ./saved-effects.exe 
 # cohttp: a separate project (cohttp/), built against the OPAM switch's lwt —
 # build under each pin (opam pin lwt "...#branch"), save both binaries,
 # alternate runs the same way. Use --root=. so the vendored lwt is ignored.
+
+# Realistic HTTP suite (http/): also built against the OPAM lwt (move the
+# vendor/lwt symlink aside while building, it clashes with the opam lwt via
+# logs.lwt). Build under each pin, save the binaries
+# (http/bin/server_lwt_{classic,effects}.exe), then bench with wrk2:
+http/ab.sh 3 http/bin/server_lwt_effects.exe        # interleaved latency A/B
+# (http/run.sh is the upstream-faithful runner but measures SEQUENTIALLY —
+# fine for absolute numbers, do not use it for core-vs-core comparisons.)
+# The server has a /gc route (Gc.full_major; reports live_words): sample it
+# under load to check for leaks — a flat live_words is the pass criterion.
 ```
 
 Pure-CPU benchmarks pinned with `taskset` (min of runs); I/O benchmarks
 unpinned (pinning starves io_uring's kernel workers, which inherit the
-affinity mask). Raw outputs in `results/`.
+affinity mask). Cool the machine between long suites (this laptop throttles
+at ~85 °C after ~12 min of benching). Raw outputs in `results/`
+(`retro2-*`/`plain2-*` are the post-fix interleaved runs).
 
 Machine: Intel i7-9750H (laptop), Linux 6.17, OCaml 5.4.0 (no flambda),
 libev for the epoll rows, `uring` 2.7.0 / `eio_linux` 1.3 / `miou` 0.6,
