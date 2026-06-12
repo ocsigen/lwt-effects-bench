@@ -62,13 +62,13 @@ def p(name): return os.path.join(here, name)
 # ============ corrected campaign + multishot accept + lab ============
 # Colour = scheduler family; DARK shade = io_uring, LIGHT shade = epoll.
 # The flagship (effect core + io_uring) is the most saturated bar.
-EFF_DARK   = "#0b47a1"   # Lwt effect core, io_uring  <- the one we want
-EFF_LIGHT  = "#93c0ee"   # Lwt effect core, epoll
-CLA_DARK   = "#4a6572"   # Lwt classic core, io_uring
-CLA_LIGHT  = "#b9cdd6"   # Lwt classic core, epoll
-LAB_DARK   = "#5b6b77"   # lwt-effects-lab (semantics-breaking), io_uring
-LAB_LIGHT  = "#9aa7b1"   # lwt-effects-lab, epoll / no engine
-DIRECT     = "#4f87c7"   # Lwt_direct (direct style on the effect core)
+EFF_DARK   = "#1a73e8"   # Lwt effect core, io_uring: vivid blue <- the one we want
+EFF_LIGHT  = "#a8c7fa"   # Lwt effect core, epoll: light blue
+CLA_DARK   = "#00796b"   # Lwt classic core, io_uring: dark blue-green (teal)
+CLA_LIGHT  = "#b2dfdb"   # Lwt classic core, epoll: light blue-green
+LAB_DARK   = "#455a64"   # lwt-effects-lab (semantics-breaking): dark blue-grey
+LAB_LIGHT  = "#78909c"   # lwt-effects-lab, epoll / no engine: blue-grey
+DIRECT     = "#6ea8dc"   # Lwt_direct (direct style on the effect core)
 EIO        = "#e8710a"   # Eio (io_uring)
 MIOU       = "#8430ce"   # Miou
 

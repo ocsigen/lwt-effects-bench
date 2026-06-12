@@ -45,11 +45,11 @@ deliberately not what the swap ships.
 **Eio** (`eio_main` 1.3, io_uring via `eio_linux`) and **Miou** (0.6) are the
 external references.
 
-**Chart colour code**: colour = scheduler family (blues for the Lwt family —
-vivid blue = effect core, blue-grey = classic core, neutral slate = lab;
-orange = Eio; purple = Miou); **dark shade = io_uring, light shade = epoll**.
-The most saturated bar (effect core + io_uring) is the configuration this
-work ships.
+**Chart colour code**: colour = scheduler family — **blue** = effect core
+(vivid for io_uring, light for epoll), **blue-green** = classic core (dark
+for io_uring, light for epoll), **dark blue-grey** = lab; orange = Eio;
+purple = Miou. The vivid-blue bar (effect core + io_uring) is the
+configuration this work ships.
 
 ## Results
 
