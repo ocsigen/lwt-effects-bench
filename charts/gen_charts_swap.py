@@ -12,6 +12,10 @@ GREEN  = "#188038"   # Lwt_effects (direct)
 ORANGE = "#e8710a"   # Eio
 PURPLE = "#8430ce"   # Miou
 
+# The shipped configuration is NEVER dimmed: its magenta must be the exact
+# same colour in every chart (the star/bold still mark each chart's best).
+FLAGSHIP = "#e6007e"
+
 W = 760
 LEFT = 250          # label column
 RIGHT = 70          # value column
@@ -42,7 +46,7 @@ def chart(path, title, subtitle, unit, rows, lower_better):
         bw = max(2, round(bararea * v / vmax))
         is_best = (v == best)
         bold = ' font-weight="700"' if is_best else ''
-        dim = '' if is_best else ' opacity="0.72"'
+        dim = '' if (is_best or colour == FLAGSHIP) else ' opacity="0.72"'
         star = ' ★' if is_best else ''
         ty = round(y + BARH * 0.68)
         out.append(f'<text x="{LEFT-10}" y="{ty}" text-anchor="end"{bold}>{esc(label)}</text>')
@@ -64,13 +68,15 @@ def p(name): return os.path.join(here, name)
 # (multishot accept included: it is part of the engine, not an option) —
 # is bright magenta and labeled "Lwt effects (io_uring)" in EVERY chart.
 # Other colours = scheduler family; DARK shade = io_uring, LIGHT = epoll.
-FLAGSHIP   = "#e6007e"   # Lwt effects (io_uring): THE shipped config, magenta
+# FLAGSHIP (defined above chart()): Lwt effects (io_uring), THE shipped
+# config, magenta — never dimmed.
 EFF_DARK   = "#1a73e8"   # effect core, io_uring + an optional app config
 EFF_LIGHT  = "#a8c7fa"   # effect core, epoll/libev: light blue
 CLA_DARK   = "#00796b"   # Lwt classic core, io_uring: dark blue-green (teal)
 CLA_LIGHT  = "#b2dfdb"   # Lwt classic core, epoll: light blue-green
-LAB_DARK   = "#455a64"   # lwt-effects-lab (semantics-breaking): dark blue-grey
-LAB_LIGHT  = "#78909c"   # lwt-effects-lab, epoll / no engine: blue-grey
+LAB        = "#78909c"   # lwt-effects-lab: ONE colour for all lab rows; each
+                         # row is a DIFFERENT semantics-breaking experiment,
+                         # named in its label ("lab: breaking <what>")
 DIRECT     = "#6ea8dc"   # Lwt_direct (direct style on the effect core)
 EIO        = "#e8710a"   # Eio (io_uring)
 MIOU       = "#8430ce"   # Miou
@@ -95,7 +101,7 @@ chart(p("swap-scheduling.svg"),
       "1000 fibers x 1000 yields, no I/O", "ns per yield",
       [("Miou (ppoll)", 425, MIOU),
        ("Eio", 88, EIO),
-       ("lab: breaking direct yield", 59, LAB_LIGHT),
+       ("lab: breaking direct yield", 59, LAB),
        ("Lwt_direct on effect core", 72, DIRECT),
        ("Lwt effects (pause)", 230, FLAGSHIP),
        ("Lwt classic (pause)", 245, CLA_LIGHT)],
@@ -104,7 +110,7 @@ chart(p("swap-scheduling.svg"),
 chart(p("swap-bind.svg"),
       "Monadic bind - resolved (the hot path)",
       "chain of 1000 binds over return x 1000 (Lwt-family only)", "ns per bind",
-      [("lab: breaking effect bind", 9.5, LAB_LIGHT),
+      [("lab: breaking suspending bind", 9.5, LAB),
        ("Lwt effects", 5.2, FLAGSHIP),
        ("Lwt classic core", 11.0, CLA_LIGHT)],
       lower_better=True)
@@ -113,7 +119,7 @@ chart(p("swap-bind-suspended.svg"),
       "Monadic bind - suspended, through Lwt_main.run",
       "chain of 1000 binds over pause x 1000; one engine lap per pause "
       "generation (classic Lwt semantics)", "ns per bind",
-      [("lab: own scheduler, no engine to run", 96, LAB_LIGHT),
+      [("lab: breaking suspending bind, no engine", 96, LAB),
        ("Lwt effects", 1273, FLAGSHIP),
        ("Lwt classic core", 1417, CLA_LIGHT)],
       lower_better=True)
@@ -123,7 +129,7 @@ chart(p("swap-pingpong.svg"),
       "round-trip latency (bigarray rows for io_uring)", "us per round-trip",
       [("Miou (ppoll)", 22.8, MIOU),
        ("Eio (io_uring)", 6.4, EIO),
-       ("lab: breaking + own ring", 6.1, LAB_DARK),
+       ("lab: breaking direct + own ring", 6.1, LAB),
        ("Lwt effects (io_uring)", 7.3, FLAGSHIP),
        ("Lwt effects (epoll)", 9.6, EFF_LIGHT),
        ("Lwt classic (io_uring)", 7.4, CLA_DARK),
@@ -136,7 +142,7 @@ chart(p("swap-echo.svg"),
       "statistical tie", "round-trips / second",
       [("Miou (ppoll)", 21500, MIOU),
        ("Eio (io_uring)", 97100, EIO),
-       ("lab: breaking + own ring", 108037, LAB_DARK),
+       ("lab: breaking direct + own ring", 108037, LAB),
        ("Lwt effects (io_uring)", 95500, FLAGSHIP),
        ("Lwt effects (epoll)", 70400, EFF_LIGHT),
        ("Lwt classic (io_uring)", 92600, CLA_DARK),

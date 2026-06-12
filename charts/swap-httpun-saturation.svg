@@ -6,7 +6,7 @@
 <rect x="250" y="54" width="154" height="26" rx="3" fill="#e8710a" opacity="0.72"/>
 <text x="412" y="72" fill="#202124">34,700</text>
 <text x="240" y="110" text-anchor="end">Lwt effects (io_uring)</text>
-<rect x="250" y="92" width="396" height="26" rx="3" fill="#e6007e" opacity="0.72"/>
+<rect x="250" y="92" width="396" height="26" rx="3" fill="#e6007e"/>
 <text x="654" y="110" fill="#202124">89,100</text>
 <text x="240" y="148" text-anchor="end">Lwt effects (libev)</text>
 <rect x="250" y="130" width="300" height="26" rx="3" fill="#a8c7fa" opacity="0.72"/>

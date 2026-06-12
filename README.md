@@ -169,7 +169,10 @@ is part of the engine, not an option). The other colours are families:
 light blue = the effect core on epoll/libev, mid blue = the shipped
 configuration plus an *optional client-side configuration* (e.g. the static
 resolver), blue-green = classic core (dark: io_uring, light: epoll), dark
-blue-grey = lab, orange = Eio (io_uring), purple = Miou (ppoll). All Lwt
+blue-grey = lab — one colour, but note that each lab row is a *different*
+semantics-breaking experiment (suspending bind, direct yield on the bare
+scheduler, direct style on a private ring), named in its label; orange =
+Eio (io_uring), purple = Miou (ppoll). All Lwt
 rows in all charts were measured with the final shipped code.
 
 ## The benchmarks, why they are relevant, and the results
@@ -279,7 +282,7 @@ workers must roam). Table: µs per round-trip, min over alternating runs
 | Lwt bigarray (classic, io_uring) | 7.4 | 7.0 | 7.5 | 10.8 | 78.8 |
 | Lwt bigarray (effects, io_uring) | 7.3 | 6.8 | 7.1 | 10.6 | **75.2** |
 | Eio (io_uring) | **6.4** | **6.6** | **6.4** | **9.8** | 76.4 |
-| lab: breaking + own ring | 6.1 | — | — | — | — |
+| lab: breaking direct + own ring | 6.1 | — | — | — | — |
 | Miou | 22.8 | 22.4 | 23.3 | 26.7 | 170.3 |
 
 io_uring is worth ~2.5 µs per round-trip to Lwt at every size. Against Eio
@@ -306,7 +309,7 @@ samples in the same windows.)
 
 | config | round-trips/s |
 |---|---|
-| lab: breaking + own ring | **108 037** |
+| lab: breaking direct + own ring | **108 037** |
 | Eio (io_uring) | 92.2k – 99.6k |
 | Lwt (effect core, io_uring) | 92.3k – 98.7k |
 | Lwt (classic core, io_uring) | 90.4k – 94.8k |
