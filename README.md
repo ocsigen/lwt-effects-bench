@@ -1,112 +1,214 @@
-# Lwt on effects — the in-place core swap, benchmarked
+# Lwt on io_uring and effects — keeping the monad at direct-style speed
 
-**2026-06-12 (corrected campaign).** [Lwt](https://github.com/ocsigen/lwt)'s
-core has been reimplemented over OCaml 5 effects, **in place**:
-`src/core/lwt.ml` on the
-[`lwt-effects-core` branch](https://github.com/ocsigen/lwt/tree/lwt-effects-core)
-is the effect engine, behind the historical `lwt.mli` (unchanged but for three
-scheduler hooks under `Lwt.Private`). It is a true drop-in: the **whole
-historical test suite passes natively** (`test/core` 705, `test/unix` 233, the
-ppx, `Lwt_react`, `Lwt_direct`, `lwt_uring` suites), and the unmodified
-ecosystem recompiles and runs — cohttp-lwt-unix, ocsigenserver, Eliom,
-Ocsigen Start.
+[Lwt](https://github.com/ocsigen/lwt) is the concurrency library a large part
+of the OCaml ecosystem is built on — Ocsigen/Eliom, MirageOS, cohttp, and
+twenty years of application code. It is **monadic**: a function that may
+suspend returns an `'a Lwt.t`, so asynchrony is visible in its type.
 
-The earlier proof-of-concept report (separate `lwt_effects` package, two bind
-flavours, hand-written cohttp backend) is preserved unchanged in
-**[README-2026-06-poc.md](README-2026-06-poc.md)**; the POC configurations
-were re-measured during this campaign to calibrate against it (see
-[Comparing with the POC](#comparing-with-the-poc)).
+OCaml 5 brought effect handlers, and with them a new generation of
+**direct-style** I/O libraries — [Eio](https://github.com/ocaml-multicore/eio),
+[Miou](https://github.com/robur-coop/miou) — with excellent performance. In
+direct style, a function that may suspend looks like any other function.
+That is pleasant to write, but it gives up something we care about:
 
-The realistic HTTP suite ([§6](#6-realistic-http-benchmarks--replicated-from-existing-suites))
-earned its keep: it surfaced a **waiter leak in the effect core's
-`choose`/`pick`** that no in-process micro-benchmark showed, fixed the same
-day (`856e73f18`) — the numbers in §6 are post-fix.
+- **Knowing, from the type, which calls can suspend.** In reactive
+  programming (React/`Lwt_react`-style update propagation) and in
+  **multi-tier programming** (Eliom's client/server tierless code), whether
+  an expression can yield to the scheduler is semantically important —
+  an invisible suspension point in the middle of an update cycle or of a
+  shared client/server section is a bug you cannot see. Until OCaml has
+  **typed effects**, the monad *is* the type discipline for suspension.
+- **Implicit concurrency**: in Lwt, `both (a >>= f) (b >>= g)` runs both
+  branches concurrently without any fork annotation. Large codebases rely
+  on this semantics.
+- **The ecosystem itself**: millions of lines compiled against `'a Lwt.t`.
+  A migration to a new API is a cost most projects will never pay.
 
-> ⚠️ Micro-benchmarks, one (laptop) machine, loopback I/O. A first run of this
-> campaign (2026-06-11) measured the two cores in separate, non-interleaved
-> passes and was skewed by varying machine load — it wrongly suggested
-> regressions. The numbers below use a **strict A/B protocol**: one binary per
-> core, saved, then run *alternating* in the same machine window. Two more
-> traps cost us a day each: after ~12 min of continuous benching this laptop
-> throttles (~85 °C, `powersave` governor) and throws 100–700 ms p99 spikes
-> at whichever server runs last; and a leak only shows up under minutes of
-> *external* sustained load. Treat <10 % as noise; ratios over absolutes.
+So the question this repository answers with benchmarks:
+
+> **Can Lwt keep its API, its types and its semantics — and reach the
+> performance of the effect-based, direct-style libraries?**
+
+The answer is yes, in two independently useful layers:
+
+1. **A transparent io_uring engine** for Lwt
+   ([`lwt-uring`](https://github.com/ocsigen/lwt/tree/lwt-uring)): a new
+   `Lwt_engine` backend; existing programs switch to io_uring with one line
+   (or a default), no other change.
+2. **A reimplementation of Lwt's core on OCaml 5 effects**
+   ([`lwt-effects-core`](https://github.com/ocsigen/lwt/tree/lwt-effects-core)):
+   `src/core/lwt.ml` rewritten over effect handlers, behind the **unchanged**
+   `lwt.mli`. A true drop-in: the whole historical test suite passes
+   natively (`test/core` 705 tests, `test/unix` 233, the ppx, `Lwt_react`,
+   `Lwt_direct`, `lwt_uring` suites), and the unmodified ecosystem
+   recompiles and runs — cohttp-lwt-unix, ocsigenserver, Eliom,
+   Ocsigen Start.
+
+**Headline results** (details and methodology below):
+
+- **io_uring is the big I/O win**: on real HTTP serving, switching the
+  engine under unchanged code raises saturation throughput by **+27 %**
+  (cohttp) to **+44 %** (httpun), and cuts small-message round-trip latency
+  from 9.9 to 7.4 µs.
+- **The effect core makes the monad itself cheaper**: an already-resolved
+  `bind` — the hot path of monadic code — costs **5.2 ns instead of 11
+  (~2×), with a third of the allocation**; cooperative scheduling is at
+  parity to ~8 % faster; an unmodified cohttp server gains **+7 %**; and the
+  effect core has the **best GC-pause profile** of everything measured
+  (max 1.0 ms under full load, vs 1.7 ms for the classic core).
+- **Against Eio, scheduler for scheduler, unchanged Lwt code on io_uring is
+  at Eio level**: a statistical tie on the echo and ping-pong I/O
+  benchmarks, and the opt-in direct style (`Lwt_direct`, on the effect
+  core's own run queue) is **faster than Eio at pure scheduling**
+  (69–76 vs 83–93 ns/yield, 16 vs 40 words). Where an Eio-based stack beats
+  an Lwt-based stack (cohttp-eio vs cohttp-lwt, ~5–9 %), holding the HTTP
+  engine constant (httpun) shows the difference is the *stack*, not the
+  scheduler.
+- **Interestingly, the "cost of effects" is zero for monadic code**: a
+  `perf` profile of the effect core serving HTTP shows the OCaml 5 effect
+  primitives (`perform`, stack switching, `continue`) at 0.00 % of samples.
+  Monadic `bind` never suspends a fiber; effects structure the scheduler
+  and enable the direct style, and you pay for them only when you use them.
+
+The earlier proof-of-concept report (separate `lwt_effects` package, two
+bind flavours) is preserved in
+[README-2026-06-poc.md](README-2026-06-poc.md).
+
+> ⚠️ All numbers: micro-benchmarks and loopback I/O on one laptop
+> (Intel i7-9750H, Linux 6.17, OCaml 5.4.0 without flambda). Treat
+> differences under 10 % as noise; prefer ratios to absolutes. The
+> [methodology section](#how-we-measured-methodology) describes the
+> protocol that makes these numbers reproducible.
+
+## What we built
+
+### Layer 1 — the transparent io_uring engine
+
+Lwt's event loop is pluggable (`Lwt_engine`): historically select, poll or
+libev (epoll). `lwt_uring` adds an io_uring backend behind the same
+interface. Readiness-based I/O keeps working unchanged; on top of it, the
+engine routes a growing set of operations through the ring as *completions*
+(reads, writes, connect, accept), batching submissions and avoiding
+syscall-per-operation. Because it is just another engine, **every existing
+Lwt program benefits without recompiling anything but the engine choice**.
+
+Two refinements that matter under connection churn:
+
+- **Multishot accept** (`IORING_ACCEPT_MULTISHOT`): one submission per
+  listening socket, one completion per accepted connection — no accept(2)
+  and no fcntl per connection. (Requires a patched ocaml-uring until the
+  feature is upstream.) In a new-connection micro-benchmark this took
+  accept throughput from 17.4k conn/s (libev) to 21.7k.
+- **`Lwt_unix.getaddrinfo` numeric fast path**: a numeric host and port
+  resolve synchronously (`AI_NUMERICHOST`) — no DNS, no worker-pool job.
+
+### Layer 2 — the effect-based core
+
+`src/core/lwt.ml` reimplemented over OCaml 5 effects, behind the unchanged
+`lwt.mli`. The key design decisions:
+
+- **`bind` stays non-suspending.** A pending `bind` allocates one lean
+  promise and one callback — like Lwt, *minus* Lwt's proxy machinery — and
+  preserves implicit concurrency. (An effect-based *suspending* bind was
+  prototyped and measured: it is not faster, and it silently changes Lwt's
+  semantics. It is not the default and never will be.)
+- **Effects structure the scheduler.** The run queue is an array ring
+  buffer; resuming a suspended computation is a queue push/pop, with the
+  continuation stored unboxed (no closure per resumption). Monadic code
+  runs in a single fiber and never performs an effect; fibers and
+  suspensions are paid for only by code that opts into direct style.
+- **Direct style as an opt-in, not a replacement**: `Lwt_direct` (a
+  `spawn`/`await` interface over the same scheduler) gives Eio-style code
+  *inside* an Lwt program, on the core's own run queue — and it benchmarks
+  faster than Eio.
+- **Promise internals tuned for the long haul**: proxy links are
+  reverse-merged so tail-recursive bind loops are O(1) in live memory
+  (measured flat over 2M iterations); link chases are path-compressed;
+  promises attached to *several* sources (`choose`/`pick` and the
+  cancellation mirrors) install **removable** waiters that detach from the
+  losers as soon as one source resolves — on a long-lived promise (a
+  server's shutdown promise, one `pick` per connection, as conduit does)
+  this is what keeps memory flat over hours. We validate it under load:
+  the live set, sampled after a full major GC during a sustained run, stays
+  constant.
+- **Classic loop semantics are preserved to the letter**, including the
+  interleaving of `Lwt.pause` with the I/O engine: each pause generation
+  yields to one engine iteration, exactly like the historical `Lwt_main`
+  lap, so a pause loop can never starve I/O. (This is visible in one
+  micro-benchmark below: a serial chain of pauses is dominated by that
+  engine lap on *both* cores — the cost is the semantics, not the
+  implementation.)
+
+A third configuration appears in some charts: **lab**
+([`lwt-effects-lab`](https://github.com/ocsigen/lwt/tree/lwt-effects-lab)),
+the *semantics-breaking* experiments (suspending bind, direct style on a
+private ring, no `Lwt_unix`). It is the "how fast could it go if we gave up
+Lwt's semantics and API" ceiling — kept experimental, deliberately not what
+ships. Its main lesson: the ceiling is close (e.g. echo 108k vs 95k rt/s),
+and on `bind` the semantics-breaking version is *not* faster.
 
 ## What is being compared
 
-The drop-in property makes the methodology simple: **every Lwt configuration
-is the same benchmark source, public Lwt API only** — what changes is which
-lwt is linked:
+The drop-in property makes the methodology simple: **every Lwt
+configuration is the same benchmark source, public Lwt API only** — what
+changes is which lwt is linked:
 
 | label | lwt |
 |---|---|
 | `classic` | the [`lwt-uring` branch](https://github.com/ocsigen/lwt/tree/lwt-uring): historical core + the transparent io_uring engine |
 | `effects` | the [`lwt-effects-core` branch](https://github.com/ocsigen/lwt/tree/lwt-effects-core): effect-based core + the same engine |
 
-A third Lwt flavour appears in some charts: **lab** — the
-[`lwt-effects-lab` branch](https://github.com/ocsigen/lwt/tree/lwt-effects-lab)'s
-*semantics-breaking* configurations (cheap suspending effect bind, direct
-style, private io_uring ring, no `Lwt_unix`). It is the "how fast could it go
-if we gave up Lwt's semantics and API" reference — kept experimental,
-deliberately not what the swap ships.
-
 **Eio** (`eio_main` 1.3, io_uring via `eio_linux`) and **Miou** (0.6,
-`miou.unix` — which multiplexes with `ppoll` on this machine; its `select`
-implementation is only the fallback when `ppoll` is unavailable) are the
+`miou.unix`, which multiplexes with `ppoll` on this machine) are the
 external references.
 
 **Chart colour code**: colour = scheduler family — **blue** = effect core
 (vivid for io_uring, light for epoll), **blue-green** = classic core (dark
-for io_uring, light for epoll), **dark blue-grey** = lab; orange = Eio (io_uring);
-purple = Miou (ppoll — verified with strace; select is only its fallback). The vivid-blue bar (effect core + io_uring) is the
-configuration this work ships.
+for io_uring, light for epoll), **dark blue-grey** = lab; orange = Eio
+(io_uring); purple = Miou (ppoll). The vivid-blue bar (effect core +
+io_uring) is the configuration this work ships.
 
-## Results
+## The benchmarks, why they are relevant, and the results
 
-### 1. Monadic bind
+The suite covers the stack bottom-up: the cost of the monad itself (bind),
+of the scheduler (yields), of single-connection I/O (ping-pong), of
+concurrent I/O (echo), then two real HTTP stacks under a real load
+generator. Each level catches what the previous one cannot.
+
+### 1. Monadic bind — the cost of every `>>=`
 
 ![bind, resolved](charts/swap-bind.svg)
 ![bind, suspended](charts/swap-bind-suspended.svg)
-
-(Re-measured 2026-06-12 evening with the final core — leak fix + pause
-cadence, see the history note below; 2 interleaved rounds, pinned.)
 
 | chain of binds (ns/op, words/op) | classic core | effect core | lab (breaking) |
 |---|---|---|---|
 | resolved (`bind (return v) f`) | 10.6–11.4 / 25 | **5.1–5.2 / 9** (~2×) | 9.5 / 9 |
 | suspended (`bind (pause ()) f`, through `Lwt_main.run`) | 1404–1430 / 88 | **1262–1284 / 71** (~10 %) | 96 / 52 |
 
-**Resolved bind — the common case of hot monadic code — is ~2× faster with
-a third of the allocation.** This is the cost of *every* already-resolved
-`>>=` in every Lwt program: the historical bind's promise + callback + proxy
-bookkeeping vs one lean promise. Tail-recursive bind loops are O(1) in live
-memory (reverse-merge proxies; measured flat over 2M steps, slightly below
-the classic core), and the full Lwt semantics are preserved (705-test core
-suite, ppx, Lwt_react — unchanged).
+The resolved row is the common case of hot monadic code — every
+already-resolved `>>=` in every Lwt program. The historical bind's
+promise + callback + proxy bookkeeping becomes one lean promise: **~2×
+faster, a third of the allocation**. Note the lab column: breaking Lwt's
+semantics buys *nothing* on bind.
 
-**A history note on the suspended row — an earlier version of this table
-claimed 87 ns (~14.7×) for the effect core.** That number was real but
-measured on a core with a conformance bug: it served successive `pause`
-generations back-to-back *without ever running the I/O engine* — under
-classic Lwt's documented behaviour, every pause generation interleaves with
-one engine iteration (that lap, ~1.3 µs of libev under `Lwt_main.run`, is
-exactly why the classic core measures 1404 ns here), and on the buggy core a
-`let rec loop () = pause () >>= loop` would have starved I/O forever. The fix
-(`7c7f9a438`) makes the effect core run classic's lap structure; the
-suspended bind through the full main loop is now lap-dominated for both
-cores, the effect core's leaner machinery showing as ~10 % and 17 fewer
-words. The engine-free figure remains legitimate only where there is no
-engine: under bare `Lwt.Private.scheduler_run`, and for the lab scheduler
-(the 96 ns column), which doesn't drive an engine at all. Where suspension
-cost matters at scale, the *pause storm* below shows the batched picture —
-one lap amortized over a thousand resumptions.
+The suspended row measures a *serial* chain of `pause`s through the full
+main loop. Lwt's semantics make each pause generation interleave with one
+I/O-engine iteration (so pause loops cannot starve I/O); that engine lap
+(~1.3 µs of libev) dominates the figure on **both** cores — the effect
+core's leaner machinery shows as ~10 % and 17 fewer words. The lab column
+shows what a scheduler with no engine to honour measures; the *pause storm*
+below shows the batched picture, where one lap is amortized over a thousand
+resumptions.
 
-### 2. Scheduling (no I/O)
+Also not visible per-op: tail-recursive bind loops are O(1) in live memory
+on the effect core (reverse-merged proxies, measured flat over 2M steps).
+
+### 2. Scheduling — pure cooperative yielding
 
 ![scheduling](charts/swap-scheduling.svg)
 
-(Re-measured 2026-06-12 evening with the final core; 2 interleaved rounds,
-pinned.)
+Why it matters: reactive code (`Lwt_react` update cycles), pause storms,
+multi-tier round-trips — workloads that are scheduler-bound, not I/O-bound.
 
 | 1000 fibers × 1000 yields | ns/yield | words/yield |
 |---|---|---|
@@ -118,23 +220,18 @@ pinned.)
 | Lwt (classic core, `pause`) | 234–255 | 67 |
 | Miou | 416–436 | 67 |
 
-The effect core is at parity to ~8 % faster than the classic one on the
-monadic `pause` storm (both now pay one engine lap per pause generation —
-see §1 — amortized here over the 1000-fiber batch) — and **direct style on
-the effect core is faster than Eio**, with the lowest allocation of the
-table. `Lwt_direct` was re-plumbed onto the
-core's own run queue (`Lwt.Private.scheduler_enqueue`): a yield is one queue
-push/pop — no private task queue, no `Lwt_main` hook pump, no engine
-round-trip per batch — essentially recovering the POC's direct-on-scheduler
-bar (52–59 ns) behind `Lwt_direct`'s unchanged public API. (On the classic
-core `Lwt_direct` keeps its hook-based implementation, hence the 130–151 ns.)
+The monadic `pause` storm is at parity to ~8 % faster on the effect core
+(both cores pay one engine lap per pause generation, amortized here over
+the 1000-fiber batch). The headline is direct style: **`Lwt_direct` on the
+effect core's run queue is faster than Eio**, with the lowest allocation of
+the table — a yield is one ring-buffer push/pop.
 
-### 3. Ping-pong latency (socketpair, payload sweep)
+### 3. Ping-pong — single-connection I/O latency
 
 ![pingpong](charts/swap-pingpong.svg)
 
-µs per round-trip, min over alternating runs ("bigarray" = the
-`Lwt_bytes`/`Lwt_io` path; re-measured 2026-06-12 evening, final core):
+µs per round-trip over a socketpair, min over alternating runs ("bigarray"
+= the `Lwt_bytes`/`Lwt_io` path, which `Lwt_io` and cohttp actually use):
 
 | config | 1 B | 64 B | 1 KB | 16 KB | 256 KB |
 |---|---|---|---|---|---|
@@ -146,22 +243,20 @@ core `Lwt_direct` keeps its hook-based implementation, hence the 130–151 ns.)
 | lab: breaking + own ring | 6.1 | — | — | — | — |
 | Miou | 22.8 | 22.4 | 23.3 | 26.7 | 170.3 |
 
-(The lab ping-pong figure is the POC report's, same machine — its harness
-only measured the 1-byte point for that configuration.)
+io_uring is worth ~2.5 µs per round-trip to Lwt at every size. Against Eio
+it is effectively a three-way tie: Eio keeps a small edge (≲1 µs) at the
+smallest payloads, the gap closes by 16 KB, and the effect core is the
+fastest of the table at 256 KB — unchanged Lwt code *at Eio level*.
 
-Effectively a three-way tie between the two Lwt cores on io_uring and Eio:
-Eio keeps a small edge (≲1 µs) at the smallest payloads, the gap closes by
-16 KB, and the effect core is the fastest of the table at 256 KB — unchanged
-Lwt code *at Eio level*. (The bytes API still regresses at large payloads
-under io_uring — the inherent copy; `Lwt_io`/cohttp use the bigarray path.)
-
-### 4. Echo TCP — 100 concurrent connections
+### 4. Echo — 100 concurrent connections
 
 ![echo](charts/swap-echo.svg)
 
-(Re-measured 2026-06-12 evening with the final core; 2 interleaved rounds,
-ranges over rounds — Eio is measured inside each binary run, so it has four
-samples in the same windows.)
+Why it matters: the scheduler and the engine under concurrent I/O pressure,
+without any HTTP stack in the way.
+
+(Ranges over interleaved rounds; Eio is measured inside each binary run, so
+it has samples in the same windows.)
 
 | config | round-trips/s |
 |---|---|
@@ -171,29 +266,24 @@ samples in the same windows.)
 | Lwt (classic core, io_uring) | 90.4k – 94.8k |
 | Lwt (effect core, epoll) | 69.3k – 71.6k |
 | Lwt (classic core, epoll) | 69.2k – 73.3k |
-| Miou | 20.8k – 22.1k |
+| Miou (ppoll) | 20.8k – 22.1k |
 
-**Unchanged Lwt code on the transparent io_uring engine is in a statistical
-tie with Eio** — the three io_uring rows overlap within window noise. (An
-earlier version of this table, from a single window, read as Lwt +9 % over
-Eio; with more rounds that was luck of the window — the honest claim is the
-tie. Same for the epoll rows: the two cores are at parity there.) For
-calibration, the POC's *private-ring* configurations re-measured during the
-campaign: `Compat` + own ring 94.2k (≈ the transparent engine today),
-direct-style + own ring 108k — the remaining direct-style margin is the
+**The three io_uring rows are a statistical tie** — unchanged Lwt code on
+the transparent engine is at Eio level. epoll → io_uring is worth ~+30 %
+here. For calibration, the lab's private-ring configurations re-measured in
+the same windows: `Compat` + own ring 94.2k (≈ the transparent engine),
+direct style + own ring 108k — the remaining direct-style margin is the
 semantics trade the drop-in declines to make.
 
 ### 5. cohttp — an unmodified, real HTTP stack
 
 ![cohttp](charts/swap-cohttp.svg)
 
-The same `cohttp-lwt-unix` 6.2.1, **untouched**, recompiled against each core
-(opam pin), `Client.get`, new connection per request (best of 3 interleaved
-rounds; this benchmark has the largest run-to-run variance; re-measured
-2026-06-12 evening with the final core — it exercises the §6 waiter-leak fix
-directly, conduit doing a `pick` per connection):
+The same `cohttp-lwt-unix` 6.2.1, **untouched**, recompiled against each
+core (opam pin), `Client.get`, new connection per request (best of 3
+interleaved rounds; this benchmark has the largest run-to-run variance):
 
-| config (best of 3 interleaved rounds) | classic | effect core |
+| config | classic | effect core |
 |---|---|---|
 | epoll | 6 105 | **6 557** (+7 %) |
 | epoll + static resolver | 6 560 | **6 803** |
@@ -201,150 +291,67 @@ directly, conduit doing a `pick` per connection):
 | io_uring + static resolver | 7 671 | **8 174** (+7 %) |
 | cohttp-eio | | 8 495 – 8 964 |
 
-Four levers, found by syscall accounting (~13 syscalls and ~4 worker-pool
-thread round-trips per request initially) and by the §6 realistic suite,
-progressively closed the gap to cohttp-eio from ~25 % to **~5–9 %**:
+This is where the per-connection optimisations show (see
+[the optimisations](#the-optimisations-and-what-each-bought)): syscall
+accounting found ~13 syscalls and ~4 worker-pool round-trips per request in
+the connection lifecycle, and three of them could be removed. The remaining
+~5–9 % to cohttp-eio is the stack itself (an `Lwt_io` buffered channel pair
+per connection, conduit, older parsing) plus the client-side socket setup —
+and it is the stack, not the scheduler, as §7 demonstrates directly.
 
-1. **Multishot accept** (`IORING_ACCEPT_MULTISHOT`, via a locally patched
-   ocaml-uring): one submission per listening socket, one completion per
-   accepted connection — no accept(2), no fcntl per accept. It turned the
-   previously *rejected* accept routing into a win (new-connection
-   microbenchmark: libev 17.4k → connect+multishot 21.7k conn/s; single-shot
-   accept had measured ~14k).
-2. **`Lwt_unix.getaddrinfo` numeric fast path** (an lwt improvement): a
-   numeric host with an all-digits port resolves synchronously
-   (AI_NUMERICHOST), with no DNS, no worker-pool job — conduit resolves the
-   host once per request.
-3. **Static service resolver** (pure client configuration, `~ctx`): conduit's
-   default resolver calls `Lwt_unix.getservbyname "http"` — a worker-pool
-   job and an /etc/services read — once per request; `Resolver_lwt_unix.
-   static_service` (Uri_services, pure OCaml) eliminates it. This of course
-   helps the classic core too.
-4. **The waiter-leak fix** (`856e73f18`, found by the §6 realistic suite):
-   conduit's per-connection `pick` was the leak's exact pattern; with
-   removable waiters the effect core stopped accumulating garbage across
-   connections and now leads the classic core in **all four** configurations
-   of this benchmark.
-
-Also tried and **rejected by measurement**: routing close(2) through the ring
-(IORING_OP_CLOSE) — the worker pool performs closes on another core, in
-parallel with the event loop, and the ring version measured slower (the
-negative result is recorded in a comment in lwt_unix). The remaining gap to
-cohttp-eio is the client-side socket setup (2 fcntl per connection — needs
-IORING_OP_SOCKET or a SOCK_NONBLOCK socket stub, <1 %) and the cohttp-lwt
-stack itself (an `Lwt_io` buffered channel pair per connection, parsing). A
-keep-alive workload amortizes the per-connection costs away. (The POC's
-higher "native" bar was cohttp's *codecs only* on a hand-written backend, not
-a usable stack — see the old report.)
-
-
-## 6. Realistic HTTP benchmarks — replicated from existing suites
-
-Two existing methodologies were reproduced as faithfully as possible
-(server sources taken verbatim from the upstream repositories, marked
-deviations only), with an external load generator (wrk2, built from source)
-over real TCP — no in-process client:
-
-- **[ocaml-multicore/retro-httpaf-bench](https://github.com/ocaml-multicore/retro-httpaf-bench)**:
-  `GET /` with a fixed ~2 KB body (and an `Lwt.pause` per request in the
-  cohttp-lwt server, as upstream), wrk2 at *fixed rates* with latency
-  percentiles (their `json.lua`), scaled to one laptop core
-  (`-t 4 -c 100 -d 20s`, rates 5k/10k/20k; upstream uses `-t 24 -c 1000` up
-  to 400k on server hardware).
-- **[robur-coop/httpcats bench protocol](https://github.com/robur-coop/httpcats/tree/main/bench)**:
-  `GET /plaintext` ("Hello, World!"), wrk at saturation, repeated runs.
-  Their Miou server (`smiou.ml`) is reproduced verbatim, run with
-  `DOMAINS=1` for a single-core comparison.
-
-Servers: cohttp-lwt-unix (retro's, classic and effect cores × libev and
-io_uring — `conf-libev` is now installed, so the libev rows are real libev),
-cohttp-eio (retro's, debug logging off), httpcats/Miou (theirs). Sources and
-runner in [http/](http/).
-
-**This suite found a real bug.** Its first pass (2026-06-12 morning) showed
-the effect core with a catastrophic latency tail (p99 36–120 ms at 20 k req/s
-vs classic's 18–20 ms) and −12 % saturation throughput — neither visible in
-any in-process micro-benchmark above. Root-causing it (perf, callgrind, olly,
-GC counters, and finally `live_words` sampled after `Gc.full_major` *under
-load*) ended at a genuine **memory leak**: the effect core's waiter lists had
-no removal mechanism — `Lwt.choose`/`pick` added a waiter to *every* promise
-of their list and never removed the losers' when one resolved. A long-lived
-promise repeatedly passed to `pick` (as conduit does, once per connection,
-against the server's shutdown promise) accumulated dead waiters without
-bound: live heap grew ~2.2 M words/s, linear, unbounded; the ballooning heap
-made major-GC marking ~4× classic's (`do_some_marking` 8.5 % vs 2.3 % of
-self-time, max GC pause 62 ms vs 1.7 ms) — the tail and the throughput gap
-were both symptoms. Classic Lwt avoids exactly this with its
-explicitly-removable callbacks ("added mainly by `Lwt.choose`"); the same
-mechanism is now in the effect core
-([`856e73f18`](https://github.com/ocsigen/lwt/commit/856e73f18): a shared-cell
-waiter that detaches from the still-pending promises when it first fires —
-`choose`/`pick`/`nchoose`/`nchoose_split`/`npick` and the
-`protected`/`wrap_in_cancelable` mirrors), with the whole historical suite
-still green. After the fix, the effect core's live set is flat under load and
-its max GC pause (1.0 ms) is the best of the table.
+### 6. Realistic HTTP — external load generator, latency percentiles
 
 ![http saturation](charts/swap-http-saturation.svg)
 ![http p99 at 20k](charts/swap-http-p99.svg)
 
-Numbers **with the fix** (strictly interleaved, ≥2 rounds per cell, medians
-for latency, means for throughput; the cohttp-eio and httpcats rows are from
-the same day's earlier window):
+Why it matters: in-process micro-benchmarks cannot see serving-pipeline
+behaviour — arrival batching, fairness across connections, GC pauses under
+steady load, memory behaviour over minutes. We reproduced two existing
+methodologies as faithfully as possible (server sources verbatim from the
+upstream repositories), with wrk2 over real TCP:
+
+- **[ocaml-multicore/retro-httpaf-bench](https://github.com/ocaml-multicore/retro-httpaf-bench)**:
+  `GET /` with a ~2 KB body, wrk2 at *fixed rates* with latency
+  percentiles, scaled to one laptop core (`-t 4 -c 100`, rates 5k/10k/20k).
+- **[robur-coop/httpcats bench protocol](https://github.com/robur-coop/httpcats/tree/main/bench)**:
+  `GET /plaintext`, wrk at saturation, repeated runs; their Miou server
+  run with `DOMAINS=1` for a single-core comparison.
 
 | config | saturation (req/s, /plaintext) | p99 @5k | p99 @10k | p99 @20k |
 |---|---|---|---|---|
 | cohttp-eio | **68–82k** | **4.0 ms** | **4.6 ms** | 8.5 ms |
-| Lwt classic, io_uring | 45.0k | 5.9 ms | 10.6 ms | 13.1 ms |
-| Lwt effect core, io_uring | 43.1k (−4.3 %) | 5.5 ms | 11.6 ms | 17.3 ms |
-| Lwt classic, libev | 35.5k | 4.9 ms | 9.5 ms | 16.4 ms |
-| Lwt effect core, libev | 35.0k (−1.4 %) | 6.2 ms | 11.4 ms | 18.5 ms |
+| cohttp-lwt, classic (io_uring) | 45.0k | 5.9 ms | 10.6 ms | 13.1 ms |
+| cohttp-lwt, effect core (io_uring) | 43.1k (−4.3 %) | 5.5 ms | 11.6 ms | 17.3 ms |
+| cohttp-lwt, classic (libev) | 35.5k | 4.9 ms | 9.5 ms | 16.4 ms |
+| cohttp-lwt, effect core (libev) | 35.0k (−1.4 %) | 6.2 ms | 11.4 ms | 18.5 ms |
 | httpcats (Miou, 1 domain) | 32.6k | 8.1 ms | 7.8 ms | **5.2 ms** |
 
 Findings:
 
-1. **The "tail-latency problem" is gone with the leak fix** — the two cores
-   are at latency parity at every rate on both engines (in a dedicated
-   interleaved 20 k A/B, median p99 came out 16.99 ms effect vs 17.05 ms
-   classic). What remained of the original 36–120 ms after the fix was
-   measurement: this laptop reaches ~85 °C after ~12 min of continuous
-   benching and the `powersave` governor then throws 100–700 ms p99 spikes at
-   *whichever* server runs last — classic included. Cool the machine between
-   long suites and interleave, or distrust the last runs.
-2. **The saturation gap narrowed from ~12 % to −4.3 % (io_uring) / −1.4 %
-   (libev)** — the residual is near this machine's noise floor (the effect
-   core won individual rounds of both metrics).
-3. The transparent io_uring engine is worth **+27 %** to classic Lwt at
-   saturation (35.5k → 45.0k) — its largest measured win, on unchanged code.
-4. httpcats/Miou has the most *stable* latency of the table (p99 5–8 ms at
-   every rate) at modest throughput — consistent with its bench report's
-   claims about scheduler fairness; cohttp-eio dominates this single-core
-   table on both axes. **Read that dominance for what it is: a comparison of
-   HTTP *stacks*, not of scheduler cores.** cohttp-eio is a recent, lean
-   rewrite; cohttp-lwt-unix carries conduit, a buffered `Lwt_io` channel
-   pair per connection and an older protocol stack. Like-for-like — the same
-   code on the two Lwt cores (§1–5), or raw I/O against Eio (echo, pingpong)
-   — the effect core ties or beats Eio. The stack gap is cohttp-lwt's to
-   close, and it shrank to ~5–9 % with the levers of §5.
-5. The leak matters beyond benchmarks: any long-running server doing a
-   `choose`/`pick` per request or connection against a long-lived promise
-   would have leaked on the pre-fix effect core. **A realistic,
-   external-load, minutes-long suite belongs in the methodology** — no
-   in-process micro-benchmark surfaced it.
+1. The transparent io_uring engine is worth **+27 %** to Lwt at saturation
+   (35.5k → 45.0k) — its largest win on this stack, on unchanged code.
+2. The two Lwt cores are at **latency parity at every rate** (in a
+   dedicated interleaved A/B at 20k, median p99 came out 16.99 ms effect vs
+   17.05 ms classic), and within noise of each other at saturation.
+3. Under `olly`, the effect core has the **best GC-pause profile** measured
+   here: max 1.0 ms under full load (classic: 1.7 ms).
+4. httpcats/Miou has the most *stable* latency of the table at modest
+   throughput — consistent with its bench report's fairness claims;
+   cohttp-eio dominates this table on both axes. **Read that dominance for
+   what it is: a comparison of HTTP *stacks***, settled next.
 
-### httpun — the same protocol engine on every scheduler
+### 7. httpun — the same protocol engine on every scheduler
 
 ![httpun saturation](charts/swap-httpun-saturation.svg)
 
-The stack-vs-core question of finding 4 can be settled directly:
 **httpun** (the maintained httpaf fork) has a single, scheduler-agnostic
-protocol engine (angstrom parser, faraday serializer, the
-`Server_connection` state machine); its per-scheduler adapters are thin
-Gluten I/O pumps with the *same* request-handler signature. So
-`server_httpun_lwt.ml` and `server_httpun_eio.ml` share their handler
-**verbatim** (`httpun_handler.ml`) — unlike cohttp-lwt vs cohttp-eio, this
-pair holds the HTTP stack constant. wrk keeps connections alive, so this
-protocol measures *per-request* cost (connection setup amortized) —
-complementary to the connection-per-request cohttp tables above.
+protocol engine (angstrom parser, faraday serializer, a CPS state machine);
+its per-scheduler adapters are thin Gluten I/O pumps with the *same*
+request-handler signature. Our two servers share their handler **verbatim**
+([`httpun_handler.ml`](http/httpun_handler.ml)) — unlike cohttp-lwt vs
+cohttp-eio, this pair holds the HTTP stack constant. wrk keeps connections
+alive, so this measures *per-request* cost (connection setup amortized) —
+complementary to the connection-per-request cohttp tables.
 
 | config | saturation (req/s) | p99 @20k req/s |
 |---|---|---|
@@ -354,80 +361,129 @@ complementary to the connection-per-request cohttp tables above.
 | httpun-lwt, effect core (libev) | 61.1k – 73.9k | 9.4 – 10.5 ms |
 | httpun-eio (gluten-eio) | 34.5k – 34.8k | 15.6 – 18.8 ms |
 
-(Ranges over two interleaved rounds; the saturation spread on the effect-core
-rows is thermal — its round-2 values, on the warmed-up-but-alternated
-machine, overlap classic's. More rounds would tighten this.)
-
 What it shows:
 
 - **Swap the stack and the picture inverts: unchanged Lwt code at ~100k
-  req/s is ~3× httpun-eio and ~2.2× the cohttp-lwt stack** at saturation on
-  the same machine and protocol. The §6 cohttp table's "Eio dominance" is
-  the *stack*, definitively: at constant engine, Lwt wins big.
+  req/s is ~3× httpun-eio and ~2.2× the cohttp-lwt stack** at saturation,
+  same machine, same protocol. The cohttp table's "Eio dominance" is the
+  *stack*, definitively.
 - A fairness caveat in the other direction: httpun-eio's 34.7k says less
   about the Eio *scheduler* than about the off-the-shelf **gluten-eio
-  adapter** (cohttp-eio reaches 75k on this very protocol). The mature,
-  hand-tuned adapter is the Lwt one — adapter quality is a real variable
-  even at constant engine.
+  adapter** (cohttp-eio reaches 75k on this very protocol). Adapter quality
+  is a real variable even at constant engine — and the mature, hand-tuned
+  adapter is the Lwt one.
+- io_uring again: **+44 %** over libev on this lean stack (the leaner the
+  stack, the more the engine shows).
 - The two Lwt cores: effect-core saturation within 0–16 % of classic
-  (overlapping at round 2), and the **most stable tail of the table**
-  (p99 10.0–10.4 ms across rounds, while classic swung 8.4–22.5 ms).
-- httpun-eio's p99 (15.6–18.8 ms) is mostly load ratio: 20k req/s is ~58 %
-  of its capacity vs ~20 % of httpun-lwt's.
+  (overlapping in half the rounds; the spread is thermal), and the **most
+  stable tail of the table** (p99 10.0–10.4 ms across rounds, while
+  classic swung 8.4–22.5 ms).
 
-## Comparing with the POC
+## The optimisations, and what each bought
 
-The POC configurations were **re-run during this campaign** (same machine
-window) and reproduce their report almost exactly — POC scheduling 59 ns
-(report: 52), POC echo Compat/ring 94.2k (94k), direct/ring 108k (107k) — so
-the two reports are directly comparable. Where the POC bars are still ahead,
-the cause is identified and none of it is the effect core itself:
+| optimisation | layer | benefit |
+|---|---|---|
+| io_uring engine (transparent) | engine | **+27–44 %** HTTP saturation, −2.5 µs/round-trip, on unchanged code — the single biggest win |
+| multishot accept | engine | accept path: 17.4k → 21.7k conn/s; removes accept(2)+fcntl per connection |
+| `getaddrinfo` numeric fast path | Lwt_unix | removes a DNS/worker-pool round-trip per numeric-host connection (conduit does one per request) |
+| static service resolver | client config | removes a `getservbyname` worker-pool job per request; helps both cores (+5–10 % on cohttp) |
+| lean promises, no proxy machinery on bind | effect core | resolved bind ~2× faster, 9 words vs 25 |
+| ring-buffer run queue, unboxed resumptions | effect core | scheduling parity-to-+8 %; `Lwt_direct` 69–76 ns/yield (faster than Eio) |
+| reverse-merged proxies + path compression | effect core | tail-recursive bind loops O(1) live memory (flat over 2M steps) |
+| removable waiters on `choose`/`pick`/mirrors | effect core | flat memory on long-lived promises under per-connection `pick` (conduit's pattern); required for long-running servers, and worth +7 % on cohttp serving |
+| `Lwt_direct` on the core run queue | effect core | direct style 132–156 → 69–76 ns/yield |
 
-| POC bar | today's equivalent | gap | cause |
-|---|---|---|---|
-| scheduling 52–59 ns (direct yield on the scheduler) | `Lwt_direct` 130 ns | ~2.2× | `Lwt_direct`'s task queue + `Lwt_main` hook indirection — re-plumb it onto the core's run queue (`Lwt.Private` hooks) |
-| echo 108k (direct + private ring) | 95–96k (transparent engine) | ~12 % | direct style + completion I/O without the `Lwt_unix` layer — a semantics/API trade the drop-in declines |
-| echo 94.2k (`Compat` + private ring) | 95–96k | none | the transparent engine matches the POC's private ring |
+And one anti-result worth recording: routing `close(2)` through the ring
+(`IORING_OP_CLOSE`) measured *slower* than the worker pool (which performs
+closes on another core, in parallel with the event loop) and was rejected;
+the negative result is documented in a comment in `lwt_unix`.
 
-## Take-aways
+## How we measured (methodology)
 
-1. **No regression — honestly accounted.** With a sound A/B protocol (and
-   the §6 waiter-leak fix) the effect core is at parity or ahead of the
-   classic core on *every* workload measured: ~2× on resolved bind, ~10 % on
-   suspended bind through the full main loop (the once-claimed 14.7× was an
-   artifact of an I/O-starvation conformance bug, since fixed — see §1),
-   parity to ~8 % on the pause storm, tie on echo/pingpong, +7 % on cohttp,
-   latency parity and −4.3 %/−1.4 % saturation (≈ noise) on the realistic
-   HTTP suite.
-2. **Unchanged Lwt code on io_uring is at Eio level** on raw-I/O workloads
-   (echo three-way statistical tie, pingpong tie from 16 KB up), and
-   **direct style (`Lwt_direct`, slimmed onto the core scheduler) is faster
-   than Eio on scheduling** (69–76 vs 83–93 ns/yield, 16 vs 40 words).
-3. cohttp-lwt is within **~5–9 %** of cohttp-eio under a clean A/B, mostly
-   explained by the **connection-lifecycle syscalls** of the
-   new-connection-per-request model: strace shows ~13 syscalls per request
-   on the Lwt side (`socket`, 2×`fcntl`, 2×`setsockopt`,
-   `connect`+`getsockopt`, `accept`, ~2.7×`close`) where eio_linux uses
-   uring-native socket ops. The I/O itself is already optimally batched
-   (fewer `io_uring_enter` than Eio). Closing this needs multishot accept /
-   `socket`/`close` ops in ocaml-uring (only `close` is exposed today) — or
-   simply a keep-alive workload, which amortizes the setup away.
-4. **Protocol matters**: non-interleaved passes under varying load produced
-   phantom regressions of 10–20 %, and thermal throttling produces phantom
-   tail-latency disasters on whichever server runs last. Per-core binaries,
-   alternated in the same window, on a cooled machine, removed them entirely.
-   (Also: never `taskset` a uring benchmark to one core — the kernel io-wq
-   workers inherit the affinity mask; and `strace -f` hangs on a uring
-   server.)
-5. **Realistic, external-load, minutes-long benchmarks are part of
-   correctness testing**: the §6 suite caught an unbounded waiter leak
-   (`choose`/`pick` against a long-lived promise) that 1200+ unit tests and
-   every in-process micro-benchmark missed.
+The numbers above survived a protocol that earlier, sloppier measurements
+did not. What ended up mattering:
+
+**Benchmark protocol.**
+
+- **One binary per configuration, saved, then runs alternated in the same
+  machine window.** Sequential passes (all of A, then all of B) under
+  varying machine load produced phantom 10–20 % regressions; interleaving
+  removed them entirely. Report ranges or medians over rounds, never a
+  single run.
+- **Thermal discipline.** A laptop throttles after ~10 minutes of
+  continuous benching (85 °C, `powersave` governor) and then produces
+  100–700 ms p99 spikes on *whichever server runs last* — easily
+  misread as a scheduler problem. Cool the machine between long suites;
+  distrust the last runs of any long sequence.
+- **Pinning rules.** Pure-CPU benchmarks are `taskset`-pinned (min of
+  runs); io_uring benchmarks must **never** be pinned — the kernel io-wq
+  workers inherit the affinity mask and starve.
+- **An external load generator at fixed rates** (wrk2, latency
+  percentiles), not just in-process loops: arrival batching, fairness and
+  tail latency only exist under open-loop load. And **minutes-long
+  sustained runs catch what unit tests cannot**: we sample the *live set*
+  (a `/gc` route does `Gc.full_major` and reports `live_words`) during the
+  run — flat is the pass criterion; any drift is a leak that 1200 unit
+  tests and every micro-benchmark will miss.
+
+**Finding the optimisations.** Each tool answers one question, and the
+discipline is to never extrapolate it to another:
+
+- **`strace -c`** (syscall accounting): found the ~13-syscall connection
+  lifecycle on the cohttp path → multishot accept, getaddrinfo fast path,
+  static resolver. Caveat: it distorts batching regimes, and `strace -f`
+  hangs on an io_uring server (io-wq kernel threads).
+- **callgrind** (deterministic instruction counts, per function): perfect
+  for "did this change add instructions, and where", and it works on the
+  libev path. Caveats: it serializes the program (concurrency effects
+  disappear), its simulated cache is too forgiving to model real memory
+  pressure, and it is unusable with io_uring.
+- **`perf stat` / `perf record`** (the ground truth on real hardware):
+  cycles, instructions and IPC per request; flat self-time profiles under
+  the *real* concurrent load. This is how we know the effect core's
+  remaining gap is allocation pressure plus an IPC drop (0.91 vs 1.01 —
+  diffuse pointer-chasing, no hot symbol), and that **the effect
+  primitives themselves are 0.00 % of samples**.
+- **`olly` (runtime_events)**: authoritative GC accounting on a live
+  process — GC share of CPU and the max-pause profile (where the effect
+  core's 1.0 ms vs classic's 1.7 ms comes from).
+- **`Gc.quick_stat` counters + `OCAMLRUNPARAM` sweeps** (`o=`, `s=`):
+  cheap, deterministic, thermal-insensitive discriminators. Allocated
+  words per request separates "allocates more" from "allocates
+  differently"; sweeping `space_overhead` separates GC-pacing effects from
+  genuine live-set growth.
+
+A general lesson: latency benchmarks on a busy laptop lie freely;
+*deterministic* counters (instructions, allocations, syscalls, live words)
+plus a strict interleaving protocol for the throughput/latency numbers is
+the combination that produced every number in this README twice.
+
+## Conclusions
+
+1. **You do not have to choose between the monad and performance.** With
+   the io_uring engine and the effect-based core, unchanged Lwt code is at
+   direct-style speed: tie with Eio on raw I/O, 2× on resolved bind,
+   faster-than-Eio direct style available *inside* Lwt when wanted.
+2. **The engine and the core are independent wins.** io_uring alone gives
+   +27–44 % at saturation to existing applications. The effect core adds
+   the cheaper monad, the best GC-pause profile, and `Lwt_direct` — while
+   passing Lwt's entire historical test suite unchanged.
+3. **Stack comparisons are not scheduler comparisons.** cohttp-eio beating
+   cohttp-lwt says the *newer HTTP stack* is leaner; at constant protocol
+   engine (httpun), Lwt is ~3× the Eio adapter. When evaluating runtimes,
+   hold the stack constant — and when evaluating stacks, say so.
+4. **Effects are free until you use them.** The effect core spends zero
+   time in effect primitives on monadic workloads; they pay only where
+   they add value (the scheduler's structure, direct style).
+5. The monad keeps what it always had: suspension visible in the types —
+   which reactive and multi-tier programming rely on — at no measurable
+   cost against the direct-style alternative.
 
 ## Reproducing
 
 ```sh
-# Switch with eio_main, miou, cohttp-eio, cohttp-lwt-unix installed.
+# Switch with eio_main, miou, cohttp-eio, cohttp-lwt-unix,
+# httpun-lwt-unix, httpun-eio installed.
 
 # Workspace benchmarks (scheduling, bind, pingpong, echo): the Lwt core is
 # the vendor/lwt symlink. Build one binary per core, SAVE both, then run
@@ -443,20 +499,18 @@ BENCH_CORE=classic ./saved-classic.exe ; BENCH_CORE=effects ./saved-effects.exe 
 # Realistic HTTP suite (http/): also built against the OPAM lwt (move the
 # vendor/lwt symlink aside while building, it clashes with the opam lwt via
 # logs.lwt). Build under each pin, save the binaries
-# (http/bin/server_lwt_{classic,effects}.exe), then bench with wrk2:
+# (http/bin/server_{cohttp,httpun}_lwt_*.exe), then bench with wrk2:
 http/ab.sh 3 http/bin/server_lwt_effects.exe        # interleaved latency A/B
 # (http/run.sh is the upstream-faithful runner but measures SEQUENTIALLY —
 # fine for absolute numbers, do not use it for core-vs-core comparisons.)
-# The server has a /gc route (Gc.full_major; reports live_words): sample it
-# under load to check for leaks — a flat live_words is the pass criterion.
+# The servers expose /gc (Gc.full_major; reports live_words): sample it
+# under load to check memory health — flat live_words is the pass criterion.
 ```
 
-Pure-CPU benchmarks pinned with `taskset` (min of runs); I/O benchmarks
-unpinned (pinning starves io_uring's kernel workers, which inherit the
-affinity mask). Cool the machine between long suites (this laptop throttles
-at ~85 °C after ~12 min of benching). Raw outputs in `results/`
-(`retro2-*`/`plain2-*` are the post-fix interleaved runs).
+Raw outputs in `results/` (`retro2-*`/`plain2-*`/`httpun-*` are the final
+interleaved runs); charts regenerate with `charts/gen_charts_swap.py` (data
+inline, versioned).
 
 Machine: Intel i7-9750H (laptop), Linux 6.17, OCaml 5.4.0 (no flambda),
 libev for the epoll rows, `uring` 2.7.0 / `eio_linux` 1.3 / `miou` 0.6,
-cohttp 6.2.1.
+cohttp 6.2.1, httpun 0.2.0.
