@@ -180,6 +180,19 @@ generator. Each level catches what the previous one cannot.
 ![bind, resolved](charts/swap-bind.svg)
 ![bind, suspended](charts/swap-bind-suspended.svg)
 
+**What it measures**: the cost of the monad's central operation, in its two
+regimes — `bind` on an already-resolved promise (the fast path), and `bind`
+on a pending one (one promise + one callback per step; on the classic core,
+plus its proxy machinery).
+
+**How**: two recursive chains of 1000 binds, run under `Lwt_main.run` —
+`bind (return v) f` (repeated 5000×) and `bind (pause ()) f` (repeated
+1000×) — public Lwt API only, the core chosen by which lwt is linked. After
+a warm-up pass and a `Gc.full_major`, we report wall time per operation and
+minor-heap words per operation (`Gc.minor_words` delta). CPU-pinned
+(`taskset`), minimum over interleaved runs of the two per-core binaries.
+(Eio and Miou have no bind — this table is Lwt-family only.)
+
 | chain of binds (ns/op, words/op) | classic core | effect core | lab (breaking) |
 |---|---|---|---|
 | resolved (`bind (return v) f`) | 10.6–11.4 / 25 | **5.1–5.2 / 9** (~2×) | 9.5 / 9 |
@@ -207,8 +220,18 @@ on the effect core (reverse-merged proxies, measured flat over 2M steps).
 
 ![scheduling](charts/swap-scheduling.svg)
 
-Why it matters: reactive code (`Lwt_react` update cycles), pause storms,
-multi-tier round-trips — workloads that are scheduler-bound, not I/O-bound.
+**What it measures**: the pure cost of suspending and resuming a
+computation, with no I/O at all — the scheduler itself. This is the regime
+of reactive code (`Lwt_react` update cycles), pause storms and multi-tier
+round-trips: workloads that are scheduler-bound, not I/O-bound.
+
+**How**: 1000 concurrent fibers each yield 1000 times (one million
+suspension/resumption cycles). Four implementations of the same workload:
+Lwt monadic (1000 concurrent `pause`-chains joined under `Lwt_main.run`),
+`Lwt_direct` (`spawn`/`yield`, direct style over the same core), Eio
+(`Fiber.fork`/`Fiber.yield` under `Eio_main.run`) and Miou
+(`Miou.async`/`Miou.yield`). Reported: ns and minor-heap words per yield;
+CPU-pinned, warm-up + `Gc.full_major` before measuring.
 
 | 1000 fibers × 1000 yields | ns/yield | words/yield |
 |---|---|---|
@@ -230,8 +253,20 @@ the table — a yield is one ring-buffer push/pop.
 
 ![pingpong](charts/swap-pingpong.svg)
 
-µs per round-trip over a socketpair, min over alternating runs ("bigarray"
-= the `Lwt_bytes`/`Lwt_io` path, which `Lwt_io` and cohttp actually use):
+**What it measures**: the latency of one I/O round-trip through the engine
+— the cost a single request/response pays, swept over payload sizes from
+1 B to 256 KB.
+
+**How**: a client fiber and a server fiber exchange a message of the given
+size back and forth over a Unix socketpair (round-trip count scaled so each
+size moves a bounded total volume). Two Lwt I/O paths are measured: *bytes*
+(`Lwt_unix.read/write` — under io_uring this path pays a bytes↔Cstruct copy
+per call, the worst case) and *bigarray* (`Lwt_bytes`, the path `Lwt_io`
+and therefore cohttp actually use — copy-free under io_uring). Because
+`Lwt_uring.set ()` is process-global, each binary runs two passes: default
+engine plus Eio/Miou first, then io_uring. Unpinned (io_uring's kernel
+workers must roam). Table: µs per round-trip, min over alternating runs
+(bigarray rows for io_uring):
 
 | config | 1 B | 64 B | 1 KB | 16 KB | 256 KB |
 |---|---|---|---|---|---|
@@ -252,11 +287,18 @@ fastest of the table at 256 KB — unchanged Lwt code *at Eio level*.
 
 ![echo](charts/swap-echo.svg)
 
-Why it matters: the scheduler and the engine under concurrent I/O pressure,
-without any HTTP stack in the way.
+**What it measures**: throughput under concurrent I/O pressure — the
+scheduler and the engine juggling many simultaneous connections, with no
+HTTP stack in the way. Where ping-pong measures one connection's latency,
+this measures how well a hundred of them share one core.
 
-(Ranges over interleaved rounds; Eio is measured inside each binary run, so
-it has samples in the same windows.)
+**How**: a loopback TCP server accepts 100 connections, each served by its
+own handler fiber; 100 client fibers connect and ping-pong 1000 messages of
+64 bytes each — everything concurrent in one process (200 fibers + the
+accept loop). Reported: round-trips per second (100 000 round-trips total).
+Same two-pass engine scheme as ping-pong, unpinned. (Ranges over
+interleaved rounds; Eio is measured inside each binary run, so it has
+samples in the same windows.)
 
 | config | round-trips/s |
 |---|---|
@@ -279,14 +321,20 @@ semantics trade the drop-in declines to make.
 
 ![cohttp](charts/swap-cohttp.svg)
 
-The same `cohttp-lwt-unix` 6.2.1, **untouched**, recompiled against each
-core (opam pin). Client (`Client.get`) and server run **in the same
-process** (closed loop), with a **new connection per request**: every
-request pays the full connection lifecycle — socket, connect, accept,
-close — and the client shares the core with the server. Absolute numbers
-are therefore low; what the harness is good at is A/B-ing a core under a
-real stack *with connection churn* (best of 3 interleaved rounds; this
-benchmark has the largest run-to-run variance).
+**What it measures**: a real, unmodified HTTP stack end-to-end on each
+core, with **connection churn** — every request pays the full connection
+lifecycle (socket, connect, accept, close), which is where the
+per-connection optimisations either pay or don't.
+
+**How**: the same `cohttp-lwt-unix` 6.2.1, **untouched**, simply
+recompiled against each core (opam pin). An in-process server answers a
+fixed body to `GET /`; 50 concurrent client fibers each perform 200
+`Client.get`, opening a **new connection per request** — client and server
+share the process and the core (closed loop), so absolute numbers are low
+by construction. A second pass installs the io_uring engine
+(`Lwt_uring.set ()`, process-global); the *static resolver* rows change
+only client configuration (`~ctx`). Best of 3 interleaved rounds — this
+benchmark has the largest run-to-run variance of the suite.
 
 The chart shows cohttp-lwt only: for context, **cohttp-eio** measured
 8 495–8 964 req/s in the same windows — but it is a recent, independent
@@ -315,11 +363,15 @@ and it is the stack, not the scheduler, as §7 demonstrates directly.
 ![http saturation](charts/swap-http-saturation.svg)
 ![http p99 at 20k](charts/swap-http-p99.svg)
 
-Why it matters: in-process micro-benchmarks cannot see serving-pipeline
-behaviour — arrival batching, fairness across connections, GC pauses under
-steady load, memory behaviour over minutes. We reproduced two existing
-methodologies as faithfully as possible (server sources verbatim from the
-upstream repositories), with wrk2 over real TCP:
+**What it measures**: serving-pipeline behaviour that in-process
+micro-benchmarks *cannot* see — arrival batching, fairness across
+connections, GC pauses under steady load, memory behaviour over minutes of
+sustained traffic.
+
+**How**: standalone server binaries (one per core and engine, the server
+sources taken verbatim from the upstream benchmark repositories), loaded
+over real TCP by **wrk2 running as a separate process**. Two existing
+methodologies are reproduced faithfully:
 
 - **[ocaml-multicore/retro-httpaf-bench](https://github.com/ocaml-multicore/retro-httpaf-bench)**:
   `GET /` with a ~2 KB body, wrk2 at *fixed rates* with latency
@@ -327,6 +379,10 @@ upstream repositories), with wrk2 over real TCP:
 - **[robur-coop/httpcats bench protocol](https://github.com/robur-coop/httpcats/tree/main/bench)**:
   `GET /plaintext`, wrk at saturation, repeated runs; their Miou server
   run with `DOMAINS=1` for a single-core comparison.
+
+The servers also expose a `/gc` route (`Gc.full_major`, then report
+`live_words`) so memory health can be sampled *during* a run — a flat live
+set over minutes of load is part of the pass criterion.
 
 The two charts answer two different questions about the same server — and
 neither is the question §5 answered, which is why the scales differ so
@@ -383,14 +439,20 @@ Findings:
 
 ![httpun saturation](charts/swap-httpun-saturation.svg)
 
-**httpun** (the maintained httpaf fork) has a single, scheduler-agnostic
-protocol engine (angstrom parser, faraday serializer, a CPS state machine);
-its per-scheduler adapters are thin Gluten I/O pumps with the *same*
-request-handler signature. Our two servers share their handler **verbatim**
-([`httpun_handler.ml`](http/httpun_handler.ml)) — unlike cohttp-lwt vs
-cohttp-eio, this pair holds the HTTP stack constant. wrk keeps connections
-alive, so this measures *per-request* cost (connection setup amortized) —
-complementary to the connection-per-request cohttp tables.
+**What it measures**: the schedulers compared **at constant HTTP stack** —
+the comparison cohttp cannot give. **httpun** (the maintained httpaf fork)
+has a single, scheduler-agnostic protocol engine (angstrom parser, faraday
+serializer, a CPS state machine); its per-scheduler adapters are thin
+Gluten I/O pumps with the *same* request-handler signature.
+
+**How**: two standalone servers sharing their request handler **verbatim**
+([`httpun_handler.ml`](http/httpun_handler.ml)) — the Lwt one
+(`Httpun_lwt_unix` over `Lwt_io.establish_server_with_client_socket`,
+built once per core via the opam pin, `-u` selects io_uring) and the Eio
+one (`Httpun_eio` over `Eio.Net.accept_fork`). Same external wrk2 harness
+as §6 (saturation + fixed-rate p99). wrk keeps connections alive, so this
+measures *per-request* cost (connection setup amortized) — complementary
+to the connection-per-request cohttp tables.
 
 | config | saturation (req/s) | p99 @20k req/s |
 |---|---|---|
