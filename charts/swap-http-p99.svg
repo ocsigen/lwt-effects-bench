@@ -5,13 +5,13 @@
 <text x="240" y="72" text-anchor="end">Lwt effects (io_uring)</text>
 <rect x="250" y="54" width="411" height="26" rx="3" fill="#e6007e"/>
 <text x="669" y="72" fill="#202124">17.3</text>
-<text x="240" y="110" text-anchor="end">Lwt effects (libev)</text>
-<rect x="250" y="92" width="440" height="26" rx="3" fill="#a8c7fa" opacity="0.72"/>
+<text x="240" y="110" text-anchor="end">Lwt effects (epoll)</text>
+<rect x="250" y="92" width="440" height="26" rx="3" fill="#a8c7fa"/>
 <text x="698" y="110" fill="#202124">18.5</text>
 <text x="240" y="148" text-anchor="end" font-weight="700">Lwt classic (io_uring)</text>
 <rect x="250" y="130" width="312" height="26" rx="3" fill="#00796b"/>
 <text x="570" y="148" fill="#202124" font-weight="700">13.1 ★</text>
-<text x="240" y="186" text-anchor="end">Lwt classic (libev)</text>
-<rect x="250" y="168" width="390" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
+<text x="240" y="186" text-anchor="end">Lwt classic (epoll)</text>
+<rect x="250" y="168" width="390" height="26" rx="3" fill="#b2dfdb"/>
 <text x="648" y="186" fill="#202124">16.4</text>
 </svg>

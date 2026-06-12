@@ -208,8 +208,14 @@ minor-heap words per operation (`Gc.minor_words` delta). CPU-pinned
 The resolved row is the common case of hot monadic code — every
 already-resolved `>>=` in every Lwt program. The historical bind's
 promise + callback + proxy bookkeeping becomes one lean promise: **~2×
-faster, a third of the allocation**. Note the lab column: breaking Lwt's
-semantics buys *nothing* on bind.
+faster, a third of the allocation**.
+
+*The lab rows here*: “lab: breaking suspending bind” is the lab branch's
+effect-based bind that **suspends the fiber** instead of allocating a
+promise and a callback — silently giving up Lwt's implicit concurrency.
+On the resolved chart it shows that breaking the semantics buys *nothing*
+on bind; on the suspended chart, the lab scheduler additionally drives
+**no I/O engine at all** — that, not the bind, is why it reads 96 ns.
 
 The suspended row measures a *serial* chain of `pause`s through the full
 main loop. Lwt's semantics make each pause generation interleave with one
@@ -256,6 +262,10 @@ the 1000-fiber batch). The headline is direct style: **`Lwt_direct` on the
 effect core's run queue is faster than Eio**, with the lowest allocation of
 the table — a yield is one ring-buffer push/pop.
 
+*The lab row here*: a direct-style yield on the lab branch's **bare
+scheduler** — no `Lwt_main`, no engine, no promise: the absolute floor for
+one suspension/resumption cycle.
+
 ### 3. Ping-pong — single-connection I/O latency
 
 ![pingpong](charts/swap-pingpong.svg)
@@ -289,6 +299,11 @@ io_uring is worth ~2.5 µs per round-trip to Lwt at every size. Against Eio
 it is effectively a three-way tie: Eio keeps a small edge (≲1 µs) at the
 smallest payloads, the gap closes by 16 KB, and the effect core is the
 fastest of the table at 256 KB — unchanged Lwt code *at Eio level*.
+
+*The lab row here (and in the echo table below)*: the lab branch's direct
+style driving its **own private io_uring ring**, bypassing `Lwt_unix` and
+`Lwt_engine` entirely — completion I/O with none of Lwt's compatibility
+layers.
 
 ### 4. Echo — 100 concurrent connections
 
@@ -430,8 +445,8 @@ HTTP engine constant.
 | cohttp-eio | **68–82k** | **4.0 ms** | **4.6 ms** | 8.5 ms |
 | cohttp-lwt, classic (io_uring) | 45.0k | 5.9 ms | 10.6 ms | 13.1 ms |
 | cohttp-lwt, effect core (io_uring) | 43.1k (−4.3 %) | 5.5 ms | 11.6 ms | 17.3 ms |
-| cohttp-lwt, classic (libev) | 35.5k | 4.9 ms | 9.5 ms | 16.4 ms |
-| cohttp-lwt, effect core (libev) | 35.0k (−1.4 %) | 6.2 ms | 11.4 ms | 18.5 ms |
+| cohttp-lwt, classic (epoll) | 35.5k | 4.9 ms | 9.5 ms | 16.4 ms |
+| cohttp-lwt, effect core (epoll) | 35.0k (−1.4 %) | 6.2 ms | 11.4 ms | 18.5 ms |
 | httpcats (Miou, 1 domain) | 32.6k | 8.1 ms | 7.8 ms | **5.2 ms** |
 
 Findings:
@@ -471,8 +486,8 @@ to the connection-per-request cohttp tables.
 |---|---|---|
 | httpun-lwt, classic (io_uring) | **98.0k – 100.2k** | 8.4 – 22.5 ms |
 | httpun-lwt, effect core (io_uring) | 82.0k – 96.3k | **10.0 – 10.4 ms** |
-| httpun-lwt, classic (libev) | 68.6k – 69.2k | 8.2 – 10.3 ms |
-| httpun-lwt, effect core (libev) | 61.1k – 73.9k | 9.4 – 10.5 ms |
+| httpun-lwt, classic (epoll) | 68.6k – 69.2k | 8.2 – 10.3 ms |
+| httpun-lwt, effect core (epoll) | 61.1k – 73.9k | 9.4 – 10.5 ms |
 | httpun-eio (gluten-eio) | 34.5k – 34.8k | 15.6 – 18.8 ms |
 
 What it shows:
@@ -486,7 +501,7 @@ What it shows:
   adapter** (cohttp-eio reaches 75k on this very protocol). Adapter quality
   is a real variable even at constant engine — and the mature, hand-tuned
   adapter is the Lwt one.
-- io_uring again: **+44 %** over libev on this lean stack (the leaner the
+- io_uring again: **+44 %** over epoll on this lean stack (the leaner the
   stack, the more the engine shows).
 - The two Lwt cores: effect-core saturation within 0–16 % of classic
   (overlapping in half the rounds; the spread is thermal), and the **most

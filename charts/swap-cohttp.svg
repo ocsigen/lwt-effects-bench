@@ -9,15 +9,15 @@
 <rect x="250" y="92" width="403" height="26" rx="3" fill="#e6007e"/>
 <text x="661" y="110" fill="#202124">7,486</text>
 <text x="240" y="148" text-anchor="end">Lwt effects (epoll)</text>
-<rect x="250" y="130" width="353" height="26" rx="3" fill="#a8c7fa" opacity="0.72"/>
+<rect x="250" y="130" width="353" height="26" rx="3" fill="#a8c7fa"/>
 <text x="611" y="148" fill="#202124">6,557</text>
 <text x="240" y="186" text-anchor="end">Lwt classic (io_uring) + static resolver (client option)</text>
-<rect x="250" y="168" width="413" height="26" rx="3" fill="#00796b" opacity="0.72"/>
+<rect x="250" y="168" width="413" height="26" rx="3" fill="#00796b"/>
 <text x="671" y="186" fill="#202124">7,671</text>
 <text x="240" y="224" text-anchor="end">Lwt classic (io_uring)</text>
-<rect x="250" y="206" width="375" height="26" rx="3" fill="#00796b" opacity="0.72"/>
+<rect x="250" y="206" width="375" height="26" rx="3" fill="#00796b"/>
 <text x="633" y="224" fill="#202124">6,964</text>
 <text x="240" y="262" text-anchor="end">Lwt classic (epoll)</text>
-<rect x="250" y="244" width="329" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
+<rect x="250" y="244" width="329" height="26" rx="3" fill="#b2dfdb"/>
 <text x="587" y="262" fill="#202124">6,105</text>
 </svg>

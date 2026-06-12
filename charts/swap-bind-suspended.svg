@@ -8,7 +8,7 @@
 <text x="240" y="110" text-anchor="end">Lwt effects</text>
 <rect x="250" y="92" width="395" height="26" rx="3" fill="#e6007e"/>
 <text x="653" y="110" fill="#202124">1,273</text>
-<text x="240" y="148" text-anchor="end">Lwt classic core</text>
-<rect x="250" y="130" width="440" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
+<text x="240" y="148" text-anchor="end">Lwt classic</text>
+<rect x="250" y="130" width="440" height="26" rx="3" fill="#b2dfdb"/>
 <text x="698" y="148" fill="#202124">1,417</text>
 </svg>

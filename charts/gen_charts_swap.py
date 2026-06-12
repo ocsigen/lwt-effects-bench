@@ -44,13 +44,14 @@ def chart(path, title, subtitle, unit, rows, lower_better):
     y = PADTOP
     for label, v, colour in rows:
         bw = max(2, round(bararea * v / vmax))
+        # Bold + star mark each chart's best; bar colours are NEVER
+        # dimmed — every configuration keeps its exact colour everywhere.
         is_best = (v == best)
         bold = ' font-weight="700"' if is_best else ''
-        dim = '' if (is_best or colour == FLAGSHIP) else ' opacity="0.72"'
         star = ' ★' if is_best else ''
         ty = round(y + BARH * 0.68)
         out.append(f'<text x="{LEFT-10}" y="{ty}" text-anchor="end"{bold}>{esc(label)}</text>')
-        out.append(f'<rect x="{LEFT}" y="{y}" width="{bw}" height="{BARH}" rx="3" fill="{colour}"{dim}/>')
+        out.append(f'<rect x="{LEFT}" y="{y}" width="{bw}" height="{BARH}" rx="3" fill="{colour}"/>')
         val = f"{v:,.0f}" if v >= 100 else f"{v:.1f}"
         out.append(f'<text x="{LEFT+bw+8}" y="{ty}" fill="#202124"{bold}>{val}{star}</text>')
         y += BARH + GAP
@@ -112,7 +113,7 @@ chart(p("swap-bind.svg"),
       "chain of 1000 binds over return x 1000 (Lwt-family only)", "ns per bind",
       [("lab: breaking suspending bind", 9.5, LAB),
        ("Lwt effects", 5.2, FLAGSHIP),
-       ("Lwt classic core", 11.0, CLA_LIGHT)],
+       ("Lwt classic", 11.0, CLA_LIGHT)],
       lower_better=True)
 
 chart(p("swap-bind-suspended.svg"),
@@ -121,7 +122,7 @@ chart(p("swap-bind-suspended.svg"),
       "generation (classic Lwt semantics)", "ns per bind",
       [("lab: breaking suspending bind, no engine", 96, LAB),
        ("Lwt effects", 1273, FLAGSHIP),
-       ("Lwt classic core", 1417, CLA_LIGHT)],
+       ("Lwt classic", 1417, CLA_LIGHT)],
       lower_better=True)
 
 chart(p("swap-pingpong.svg"),
@@ -170,18 +171,18 @@ chart(p("swap-http-saturation.svg"),
       "cohttp-lwt-unix under an external load generator - saturation",
       "GET /plaintext, wrk -t4 -c64 keep-alive, one core", "requests / second",
       [("Lwt effects (io_uring)", 43100, FLAGSHIP),
-       ("Lwt effects (libev)", 34999, EFF_LIGHT),
+       ("Lwt effects (epoll)", 34999, EFF_LIGHT),
        ("Lwt classic (io_uring)", 45018, CLA_DARK),
-       ("Lwt classic (libev)", 35482, CLA_LIGHT)],
+       ("Lwt classic (epoll)", 35482, CLA_LIGHT)],
       lower_better=False)
 
 chart(p("swap-http-p99.svg"),
       "cohttp-lwt-unix under an external load generator - tail latency",
       "GET / (2 KB), wrk2 at a fixed 20k req/s, p99 (median over rounds)", "ms",
       [("Lwt effects (io_uring)", 17.3, FLAGSHIP),
-       ("Lwt effects (libev)", 18.5, EFF_LIGHT),
+       ("Lwt effects (epoll)", 18.5, EFF_LIGHT),
        ("Lwt classic (io_uring)", 13.1, CLA_DARK),
-       ("Lwt classic (libev)", 16.4, CLA_LIGHT)],
+       ("Lwt classic (epoll)", 16.4, CLA_LIGHT)],
       lower_better=True)
 
 # httpun: one scheduler-agnostic protocol engine (the maintained httpaf
@@ -194,7 +195,7 @@ chart(p("swap-httpun-saturation.svg"),
       "verbatim between the Lwt and Eio servers", "requests / second",
       [("httpun-eio (gluten-eio adapter)", 34700, EIO),
        ("Lwt effects (io_uring)", 89100, FLAGSHIP),
-       ("Lwt effects (libev)", 67500, EFF_LIGHT),
+       ("Lwt effects (epoll)", 67500, EFF_LIGHT),
        ("Lwt classic (io_uring)", 99100, CLA_DARK),
-       ("Lwt classic (libev)", 68900, CLA_LIGHT)],
+       ("Lwt classic (epoll)", 68900, CLA_LIGHT)],
       lower_better=False)
