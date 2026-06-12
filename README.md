@@ -65,10 +65,8 @@ configuration this work ships.
 
 ### 1. Monadic bind
 
-![bind](charts/swap-bind.svg)
-
-*(⚠ chart not yet regenerated: it still shows the pre-cadence 87 ns
-suspended-bind bar — the table below is the current truth.)*
+![bind, resolved](charts/swap-bind.svg)
+![bind, suspended](charts/swap-bind-suspended.svg)
 
 (Re-measured 2026-06-12 evening with the final core — leak fix + pause
 cadence, see the history note below; 2 interleaved rounds, pinned.)
@@ -285,6 +283,9 @@ waiter that detaches from the still-pending promises when it first fires —
 `protected`/`wrap_in_cancelable` mirrors), with the whole historical suite
 still green. After the fix, the effect core's live set is flat under load and
 its max GC pause (1.0 ms) is the best of the table.
+
+![http saturation](charts/swap-http-saturation.svg)
+![http p99 at 20k](charts/swap-http-p99.svg)
 
 Numbers **with the fix** (strictly interleaved, ≥2 rounds per cell, medians
 for latency, means for throughput; the cohttp-eio and httpcats rows are from

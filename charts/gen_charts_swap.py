@@ -72,57 +72,99 @@ DIRECT     = "#6ea8dc"   # Lwt_direct (direct style on the effect core)
 EIO        = "#e8710a"   # Eio (io_uring)
 MIOU       = "#8430ce"   # Miou
 
+# Data: re-measured 2026-06-12 evening with the FINAL core (waiter-leak fix
+# 856e73f18 + pause-cadence conformance 7c7f9a438), 2-3 interleaved rounds,
+# cool machine; midpoints of rounds (mins for pingpong, best-of-3 for cohttp),
+# matching the README tables.
+
 chart(p("swap-scheduling.svg"),
       "Scheduling - pure cooperative yielding",
       "1000 fibers x 1000 yields, no I/O", "ns per yield",
-      [("Miou (ppoll)", 409, MIOU),
-       ("Lwt classic (pause)", 225, CLA_LIGHT),
-       ("Lwt effect core (pause)", 207, EFF_LIGHT),
+      [("Miou (ppoll)", 425, MIOU),
+       ("Lwt classic (pause)", 245, CLA_LIGHT),
+       ("Lwt effect core (pause)", 230, EFF_LIGHT),
        ("Lwt_direct on effect core", 72, DIRECT),
-       ("Eio", 86, EIO),
+       ("Eio", 88, EIO),
        ("lab: breaking direct yield", 59, LAB_LIGHT)],
       lower_better=True)
 
 chart(p("swap-bind.svg"),
-      "Monadic bind on a pending promise",
-      "chain of 1000 binds over pause x 1000 (Lwt-family only)", "ns per bind",
-      [("Lwt classic core", 1282, CLA_LIGHT),
-       ("lab: breaking effect bind", 96, LAB_LIGHT),
-       ("Lwt effect core", 87, EFF_LIGHT)],
+      "Monadic bind - resolved (the hot path)",
+      "chain of 1000 binds over return x 1000 (Lwt-family only)", "ns per bind",
+      [("Lwt classic core", 11.0, CLA_LIGHT),
+       ("lab: breaking effect bind", 9.5, LAB_LIGHT),
+       ("Lwt effect core", 5.2, EFF_LIGHT)],
+      lower_better=True)
+
+chart(p("swap-bind-suspended.svg"),
+      "Monadic bind - suspended, through Lwt_main.run",
+      "chain of 1000 binds over pause x 1000; one engine lap per pause "
+      "generation (classic Lwt semantics)", "ns per bind",
+      [("Lwt classic core", 1417, CLA_LIGHT),
+       ("Lwt effect core", 1273, EFF_LIGHT),
+       ("lab: own scheduler, no engine to run", 96, LAB_LIGHT)],
       lower_better=True)
 
 chart(p("swap-pingpong.svg"),
       "Ping-pong latency over a socketpair (1 byte)",
       "round-trip latency (bigarray rows for io_uring)", "us per round-trip",
-      [("Miou (ppoll)", 21.8, MIOU),
-       ("Lwt classic (epoll)", 9.5, CLA_LIGHT),
-       ("Lwt effect core (epoll)", 9.2, EFF_LIGHT),
-       ("Lwt classic (io_uring)", 6.5, CLA_DARK),
-       ("Lwt effect core (io_uring)", 6.5, EFF_DARK),
+      [("Miou (ppoll)", 22.8, MIOU),
+       ("Lwt classic (epoll)", 9.9, CLA_LIGHT),
+       ("Lwt effect core (epoll)", 9.6, EFF_LIGHT),
+       ("Lwt classic (io_uring)", 7.4, CLA_DARK),
+       ("Lwt effect core (io_uring)", 7.3, EFF_DARK),
        ("Eio (io_uring)", 6.4, EIO),
        ("lab: breaking + own ring", 6.1, LAB_DARK)],
       lower_better=True)
 
 chart(p("swap-echo.svg"),
       "Echo TCP - 100 concurrent connections",
-      "100 conn x 1000 msgs x 64 B", "round-trips / second",
+      "100 conn x 1000 msgs x 64 B; the three io_uring rows are a "
+      "statistical tie", "round-trips / second",
       [("lab: breaking + own ring", 108037, LAB_DARK),
-       ("Lwt classic (io_uring)", 96187, CLA_DARK),
-       ("Lwt effect core (io_uring)", 95302, EFF_DARK),
-       ("Eio (io_uring)", 87750, EIO),
-       ("Lwt effect core (epoll)", 77422, EFF_LIGHT),
-       ("Lwt classic (epoll)", 73145, CLA_LIGHT),
-       ("Miou (ppoll)", 21898, MIOU)],
+       ("Eio (io_uring)", 97100, EIO),
+       ("Lwt effect core (io_uring)", 95500, EFF_DARK),
+       ("Lwt classic (io_uring)", 92600, CLA_DARK),
+       ("Lwt classic (epoll)", 71300, CLA_LIGHT),
+       ("Lwt effect core (epoll)", 70400, EFF_LIGHT),
+       ("Miou (ppoll)", 21500, MIOU)],
       lower_better=False)
 
 chart(p("swap-cohttp.svg"),
       "cohttp - unmodified cohttp-lwt-unix, recompiled",
       "50 conn x 200 req, GET /, new connection per request", "requests / second",
-      [("cohttp-eio", 9368, EIO),
-       ("Lwt effect core (io_uring, multishot + static resolver)", 7978, EFF_DARK),
-       ("Lwt classic (io_uring, static resolver)", 7766, CLA_DARK),
-       ("Lwt effect core (io_uring, multishot)", 7975, EFF_DARK),
-       ("Lwt classic (io_uring)", 7172, CLA_DARK),
-       ("Lwt effect core (epoll)", 6957, EFF_LIGHT),
-       ("Lwt classic (epoll)", 6403, CLA_LIGHT)],
+      [("cohttp-eio", 8964, EIO),
+       ("Lwt effect core (io_uring, multishot + static resolver)", 8174, EFF_DARK),
+       ("Lwt classic (io_uring, static resolver)", 7671, CLA_DARK),
+       ("Lwt effect core (io_uring, multishot)", 7486, EFF_DARK),
+       ("Lwt classic (io_uring)", 6964, CLA_DARK),
+       ("Lwt effect core (epoll)", 6557, EFF_LIGHT),
+       ("Lwt classic (epoll)", 6105, CLA_LIGHT)],
       lower_better=False)
+
+# ============ realistic HTTP suite (README section 6) ============
+# wrk2 over real TCP; post-leak-fix interleaved runs (results/retro2-*,
+# plain2-*). cohttp-eio and httpcats rows from the same day's window.
+
+chart(p("swap-http-saturation.svg"),
+      "Realistic HTTP - saturation",
+      "GET /plaintext, wrk -t4 -c64, one core; stack comparison "
+      "(cohttp-lwt vs cohttp-eio vs httpcats)", "requests / second",
+      [("cohttp-eio", 75000, EIO),
+       ("cohttp-lwt, classic (io_uring)", 45018, CLA_DARK),
+       ("cohttp-lwt, effect core (io_uring)", 43100, EFF_DARK),
+       ("cohttp-lwt, classic (libev)", 35482, CLA_LIGHT),
+       ("cohttp-lwt, effect core (libev)", 34999, EFF_LIGHT),
+       ("httpcats (Miou, 1 domain)", 32600, MIOU)],
+      lower_better=False)
+
+chart(p("swap-http-p99.svg"),
+      "Realistic HTTP - latency tail at 20k req/s",
+      "GET / (2 KB), wrk2 -R 20000, p99 (median over rounds)", "ms",
+      [("cohttp-lwt, effect core (libev)", 18.5, EFF_LIGHT),
+       ("cohttp-lwt, effect core (io_uring)", 17.3, EFF_DARK),
+       ("cohttp-lwt, classic (libev)", 16.4, CLA_LIGHT),
+       ("cohttp-lwt, classic (io_uring)", 13.1, CLA_DARK),
+       ("cohttp-eio", 8.5, EIO),
+       ("httpcats (Miou, 1 domain)", 5.2, MIOU)],
+      lower_better=True)

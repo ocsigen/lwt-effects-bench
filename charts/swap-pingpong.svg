@@ -4,23 +4,23 @@
 <text x="16" y="42" fill="#5f6368">round-trip latency (bigarray rows for io_uring) — lower is better ↓ (us per round-trip)</text>
 <text x="240" y="72" text-anchor="end">Miou (ppoll)</text>
 <rect x="250" y="54" width="440" height="26" rx="3" fill="#8430ce" opacity="0.72"/>
-<text x="698" y="72" fill="#202124">21.8</text>
+<text x="698" y="72" fill="#202124">22.8</text>
 <text x="240" y="110" text-anchor="end">Lwt classic (epoll)</text>
-<rect x="250" y="92" width="192" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
-<text x="450" y="110" fill="#202124">9.5</text>
+<rect x="250" y="92" width="191" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
+<text x="449" y="110" fill="#202124">9.9</text>
 <text x="240" y="148" text-anchor="end">Lwt effect core (epoll)</text>
-<rect x="250" y="130" width="186" height="26" rx="3" fill="#a8c7fa" opacity="0.72"/>
-<text x="444" y="148" fill="#202124">9.2</text>
+<rect x="250" y="130" width="185" height="26" rx="3" fill="#a8c7fa" opacity="0.72"/>
+<text x="443" y="148" fill="#202124">9.6</text>
 <text x="240" y="186" text-anchor="end">Lwt classic (io_uring)</text>
-<rect x="250" y="168" width="131" height="26" rx="3" fill="#00796b" opacity="0.72"/>
-<text x="389" y="186" fill="#202124">6.5</text>
+<rect x="250" y="168" width="143" height="26" rx="3" fill="#00796b" opacity="0.72"/>
+<text x="401" y="186" fill="#202124">7.4</text>
 <text x="240" y="224" text-anchor="end">Lwt effect core (io_uring)</text>
-<rect x="250" y="206" width="131" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
-<text x="389" y="224" fill="#202124">6.5</text>
+<rect x="250" y="206" width="141" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
+<text x="399" y="224" fill="#202124">7.3</text>
 <text x="240" y="262" text-anchor="end">Eio (io_uring)</text>
-<rect x="250" y="244" width="129" height="26" rx="3" fill="#e8710a" opacity="0.72"/>
-<text x="387" y="262" fill="#202124">6.4</text>
+<rect x="250" y="244" width="124" height="26" rx="3" fill="#e8710a" opacity="0.72"/>
+<text x="382" y="262" fill="#202124">6.4</text>
 <text x="240" y="300" text-anchor="end" font-weight="700">lab: breaking + own ring</text>
-<rect x="250" y="282" width="123" height="26" rx="3" fill="#455a64"/>
-<text x="381" y="300" fill="#202124" font-weight="700">6.1 ★</text>
+<rect x="250" y="282" width="118" height="26" rx="3" fill="#455a64"/>
+<text x="376" y="300" fill="#202124" font-weight="700">6.1 ★</text>
 </svg>
