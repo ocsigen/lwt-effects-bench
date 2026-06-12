@@ -35,8 +35,21 @@ lwt is linked:
 | `classic` | the [`lwt-uring` branch](https://github.com/ocsigen/lwt/tree/lwt-uring): historical core + the transparent io_uring engine |
 | `effects` | the [`lwt-effects-core` branch](https://github.com/ocsigen/lwt/tree/lwt-effects-core): effect-based core + the same engine |
 
+A third Lwt flavour appears in some charts: **lab** — the
+[`lwt-effects-lab` branch](https://github.com/ocsigen/lwt/tree/lwt-effects-lab)'s
+*semantics-breaking* configurations (cheap suspending effect bind, direct
+style, private io_uring ring, no `Lwt_unix`). It is the "how fast could it go
+if we gave up Lwt's semantics and API" reference — kept experimental,
+deliberately not what the swap ships.
+
 **Eio** (`eio_main` 1.3, io_uring via `eio_linux`) and **Miou** (0.6) are the
 external references.
+
+**Chart colour code**: colour = scheduler family (blues for the Lwt family —
+vivid blue = effect core, blue-grey = classic core, neutral slate = lab;
+orange = Eio; purple = Miou); **dark shade = io_uring, light shade = epoll**.
+The most saturated bar (effect core + io_uring) is the configuration this
+work ships.
 
 ## Results
 
@@ -44,10 +57,14 @@ external references.
 
 ![bind](charts/swap-bind.svg)
 
-| chain of binds (ns/op, words/op) | classic core | effect core |
-|---|---|---|
-| resolved (`bind (return v) f`) | 10.4 / 25 | **5.2 / 9** (~2×) |
-| suspended (`bind (pause ()) f`) | 1282 / 88 | **87 / 61** (~14.7×) |
+| chain of binds (ns/op, words/op) | classic core | effect core | lab (breaking) |
+|---|---|---|---|
+| resolved (`bind (return v) f`) | 10.4 / 25 | **5.2 / 9** (~2×) | 9.5 / 9 |
+| suspended (`bind (pause ()) f`) | 1282 / 88 | **87 / 61** (~14.7×) | 96 / 52 |
+
+Note the lab column: the *semantics-breaking* suspending bind (96 ns) is
+SLOWER than the drop-in, semantics-preserving one (87 ns) — on bind there is
+nothing to gain by breaking Lwt's semantics.
 
 This is the cost of *every* `>>=` in every Lwt program: the historical pending
 `bind` builds a promise, a callback and proxy bookkeeping; the effect core
@@ -64,6 +81,7 @@ slightly below the classic core), and the full Lwt semantics are preserved
 
 | 1000 fibers × 1000 yields | ns/yield | words/yield |
 |---|---|---|
+| lab: breaking direct yield | 59 | 9 |
 | **Lwt_direct (effect core)** | **71–83** | **16** |
 | Eio | 86–102 | 40 |
 | Lwt_direct (classic core) | 130–151 | 18 |
@@ -94,7 +112,11 @@ core `Lwt_direct` keeps its hook-based implementation, hence the 130–151 ns.)
 | Lwt bigarray (classic, io_uring) | 6.5 | 6.6 | 6.8 | **9.9** | 74.5 |
 | Lwt bigarray (effects, io_uring) | 6.5 | 6.7 | 7.2 | 10.1 | **73.1** |
 | Eio (io_uring) | **6.4** | **6.3** | **6.7** | 10.1 | 75.8 |
+| lab: breaking + own ring | 6.1 | — | — | — | — |
 | Miou | 21.8 | 21.9 | 21.8 | 26.1 | 169.2 |
+
+(The lab ping-pong figure is the POC report's, same machine — its harness
+only measured the 1-byte point for that configuration.)
 
 A three-way tie between the two Lwt cores on io_uring and Eio, at every size —
 the unchanged Lwt code is *at Eio level*, and the effect core is the fastest
@@ -107,7 +129,8 @@ under io_uring — the inherent copy; `Lwt_io`/cohttp use the bigarray path.)
 
 | config | round-trips/s |
 |---|---|
-| Lwt (classic core, io_uring) | **96 187** |
+| lab: breaking + own ring | **108 037** |
+| Lwt (classic core, io_uring) | 96 187 |
 | Lwt (effect core, io_uring) | 95 302 |
 | Eio (io_uring) | 87 750 |
 | Lwt (effect core, epoll) | 77 422 |
@@ -131,16 +154,25 @@ runs; this benchmark has the largest run-to-run variance):
 
 | config | req/s |
 |---|---|
-| cohttp-eio | 7 092 – 7 935 |
-| cohttp-lwt (effect core, io_uring) | **7 572** |
-| cohttp-lwt (classic core, io_uring) | 7 233 |
-| cohttp-lwt (effect core, epoll) | 6 936 |
-| cohttp-lwt (classic core, epoll) | 6 352 |
+| cohttp-eio | 8 597 – 8 851 |
+| cohttp-lwt (effect core, io_uring + **multishot accept**) | **6 627 – 6 858** |
+| cohttp-lwt (classic core, io_uring) | 6 585 – 6 689 |
+| cohttp-lwt (effect core, epoll) | 6 149 – 6 178 |
+| cohttp-lwt (classic core, epoll) | 5 659 – 5 751 |
 
-In the interleaved pairs the effect core was consistently ~+9 % over classic
-on epoll; with io_uring the unchanged cohttp-lwt reaches cohttp-eio territory.
-(The POC's higher "native" bar was cohttp's *codecs only* on a hand-written
-backend, not a usable stack — see the old report.)
+In the interleaved pairs the effect core is consistently ~+7-9 % over classic
+on epoll. The io_uring rows now include **multishot accept**
+(`IORING_ACCEPT_MULTISHOT`, via a locally patched ocaml-uring): one
+submission per listening socket, one completion per accepted connection — no
+accept(2) and no fcntl per accept. It turned the previously *rejected* accept
+routing into a win (new-connection microbenchmark: libev 17.4k, connect-only
+~20.5k, single-shot accept ~14k, **connect + multishot accept 20.9k
+conn/s**), is worth ~+2-3 % on cohttp, and the remaining gap to cohttp-eio is
+the client side (socket/fcntl/connect per request — needs IORING_OP_SOCKET,
+not exposed by ocaml-uring) plus the stack itself. A keep-alive workload
+amortizes all of this away. (The POC's higher "native" bar was cohttp's
+*codecs only* on a hand-written backend, not a usable stack — see the old
+report.)
 
 ## Comparing with the POC
 
