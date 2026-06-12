@@ -168,3 +168,18 @@ chart(p("swap-http-p99.svg"),
        ("cohttp-eio", 8.5, EIO),
        ("httpcats (Miou, 1 domain)", 5.2, MIOU)],
       lower_better=True)
+
+# httpun: one scheduler-agnostic protocol engine (the maintained httpaf
+# fork), thin Gluten adapters, the request handler shared VERBATIM between
+# the Lwt and Eio servers — the HTTP stack held constant. Midpoints of two
+# interleaved rounds (2026-06-12 evening).
+chart(p("swap-httpun-saturation.svg"),
+      "httpun - same protocol engine, scheduler isolated",
+      "GET /plaintext, wrk -t4 -c64 keep-alive, one core; handler shared "
+      "verbatim between the Lwt and Eio servers", "requests / second",
+      [("httpun-lwt, classic (io_uring)", 99100, CLA_DARK),
+       ("httpun-lwt, effect core (io_uring)", 89100, EFF_DARK),
+       ("httpun-lwt, classic (libev)", 68900, CLA_LIGHT),
+       ("httpun-lwt, effect core (libev)", 67500, EFF_LIGHT),
+       ("httpun-eio (gluten-eio adapter)", 34700, EIO)],
+      lower_better=False)

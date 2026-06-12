@@ -331,6 +331,50 @@ Findings:
    external-load, minutes-long suite belongs in the methodology** — no
    in-process micro-benchmark surfaced it.
 
+### httpun — the same protocol engine on every scheduler
+
+![httpun saturation](charts/swap-httpun-saturation.svg)
+
+The stack-vs-core question of finding 4 can be settled directly:
+**httpun** (the maintained httpaf fork) has a single, scheduler-agnostic
+protocol engine (angstrom parser, faraday serializer, the
+`Server_connection` state machine); its per-scheduler adapters are thin
+Gluten I/O pumps with the *same* request-handler signature. So
+`server_httpun_lwt.ml` and `server_httpun_eio.ml` share their handler
+**verbatim** (`httpun_handler.ml`) — unlike cohttp-lwt vs cohttp-eio, this
+pair holds the HTTP stack constant. wrk keeps connections alive, so this
+protocol measures *per-request* cost (connection setup amortized) —
+complementary to the connection-per-request cohttp tables above.
+
+| config | saturation (req/s) | p99 @20k req/s |
+|---|---|---|
+| httpun-lwt, classic (io_uring) | **98.0k – 100.2k** | 8.4 – 22.5 ms |
+| httpun-lwt, effect core (io_uring) | 82.0k – 96.3k | **10.0 – 10.4 ms** |
+| httpun-lwt, classic (libev) | 68.6k – 69.2k | 8.2 – 10.3 ms |
+| httpun-lwt, effect core (libev) | 61.1k – 73.9k | 9.4 – 10.5 ms |
+| httpun-eio (gluten-eio) | 34.5k – 34.8k | 15.6 – 18.8 ms |
+
+(Ranges over two interleaved rounds; the saturation spread on the effect-core
+rows is thermal — its round-2 values, on the warmed-up-but-alternated
+machine, overlap classic's. More rounds would tighten this.)
+
+What it shows:
+
+- **Swap the stack and the picture inverts: unchanged Lwt code at ~100k
+  req/s is ~3× httpun-eio and ~2.2× the cohttp-lwt stack** at saturation on
+  the same machine and protocol. The §6 cohttp table's "Eio dominance" is
+  the *stack*, definitively: at constant engine, Lwt wins big.
+- A fairness caveat in the other direction: httpun-eio's 34.7k says less
+  about the Eio *scheduler* than about the off-the-shelf **gluten-eio
+  adapter** (cohttp-eio reaches 75k on this very protocol). The mature,
+  hand-tuned adapter is the Lwt one — adapter quality is a real variable
+  even at constant engine.
+- The two Lwt cores: effect-core saturation within 0–16 % of classic
+  (overlapping at round 2), and the **most stable tail of the table**
+  (p99 10.0–10.4 ms across rounds, while classic swung 8.4–22.5 ms).
+- httpun-eio's p99 (15.6–18.8 ms) is mostly load ratio: 20k req/s is ~58 %
+  of its capacity vs ~20 % of httpun-lwt's.
+
 ## Comparing with the POC
 
 The POC configurations were **re-run during this campaign** (same machine

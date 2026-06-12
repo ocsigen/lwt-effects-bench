@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="248" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
+<rect width="760" height="248" fill="white"/>
+<text x="16" y="24" font-size="16" font-weight="700">httpun - same protocol engine, scheduler isolated</text>
+<text x="16" y="42" fill="#5f6368">GET /plaintext, wrk -t4 -c64 keep-alive, one core; handler shared verbatim between the Lwt and Eio servers — higher is better ↑ (requests / second)</text>
+<text x="240" y="72" text-anchor="end" font-weight="700">httpun-lwt, classic (io_uring)</text>
+<rect x="250" y="54" width="440" height="26" rx="3" fill="#00796b"/>
+<text x="698" y="72" fill="#202124" font-weight="700">99,100 ★</text>
+<text x="240" y="110" text-anchor="end">httpun-lwt, effect core (io_uring)</text>
+<rect x="250" y="92" width="396" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
+<text x="654" y="110" fill="#202124">89,100</text>
+<text x="240" y="148" text-anchor="end">httpun-lwt, classic (libev)</text>
+<rect x="250" y="130" width="306" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
+<text x="564" y="148" fill="#202124">68,900</text>
+<text x="240" y="186" text-anchor="end">httpun-lwt, effect core (libev)</text>
+<rect x="250" y="168" width="300" height="26" rx="3" fill="#a8c7fa" opacity="0.72"/>
+<text x="558" y="186" fill="#202124">67,500</text>
+<text x="240" y="224" text-anchor="end">httpun-eio (gluten-eio adapter)</text>
+<rect x="250" y="206" width="154" height="26" rx="3" fill="#e8710a" opacity="0.72"/>
+<text x="412" y="224" fill="#202124">34,700</text>
+</svg>

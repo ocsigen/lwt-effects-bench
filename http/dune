@@ -1,6 +1,9 @@
 (executables
- (names server_cohttp_lwt server_cohttp_eio server_httpcats)
- (modules alice server_cohttp_lwt server_cohttp_eio server_httpcats)
+ (names server_cohttp_lwt server_cohttp_eio server_httpcats
+        server_httpun_lwt server_httpun_eio)
+ (modules alice httpun_handler
+          server_cohttp_lwt server_cohttp_eio server_httpcats
+          server_httpun_lwt server_httpun_eio)
  (libraries
   lwt
   lwt.unix
@@ -16,6 +19,10 @@
   logs.fmt
   httpcats
   h1
+  httpun
+  httpun-lwt-unix
+  httpun-eio
+  gluten
   miou
   miou.unix
   uri
