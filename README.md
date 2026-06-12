@@ -280,8 +280,19 @@ semantics trade the drop-in declines to make.
 ![cohttp](charts/swap-cohttp.svg)
 
 The same `cohttp-lwt-unix` 6.2.1, **untouched**, recompiled against each
-core (opam pin), `Client.get`, new connection per request (best of 3
-interleaved rounds; this benchmark has the largest run-to-run variance):
+core (opam pin). Client (`Client.get`) and server run **in the same
+process** (closed loop), with a **new connection per request**: every
+request pays the full connection lifecycle — socket, connect, accept,
+close — and the client shares the core with the server. Absolute numbers
+are therefore low; what the harness is good at is A/B-ing a core under a
+real stack *with connection churn* (best of 3 interleaved rounds; this
+benchmark has the largest run-to-run variance).
+
+The chart shows cohttp-lwt only: for context, **cohttp-eio** measured
+8 495–8 964 req/s in the same windows — but it is a recent, independent
+Eio-native implementation that shares little beyond types with cohttp-lwt,
+so the comparison says more about the two stacks than about the schedulers
+(§7 holds the engine constant).
 
 | config | classic | effect core |
 |---|---|---|
@@ -316,6 +327,34 @@ upstream repositories), with wrk2 over real TCP:
 - **[robur-coop/httpcats bench protocol](https://github.com/robur-coop/httpcats/tree/main/bench)**:
   `GET /plaintext`, wrk at saturation, repeated runs; their Miou server
   run with `DOMAINS=1` for a single-core comparison.
+
+The two charts answer two different questions about the same server — and
+neither is the question §5 answered, which is why the scales differ so
+much:
+
+- **§5 (above)** runs client *and* server **in the same process**, closed
+  loop, with a **new connection per request**: every request pays the full
+  connection lifecycle and shares the core with the client. Low absolute
+  numbers (~6–8k req/s), but the right harness for A/B-ing a core under
+  connection churn.
+- **Saturation (first chart)** uses the **external** load generator on
+  **keep-alive** connections with the throttle open: the server has the
+  whole core to itself and pays no per-request connection setup. It
+  measures *peak serving capacity* — hence figures ~6× those of §5.
+- **Tail latency (second chart)** is the same external harness but at a
+  **fixed 20k req/s** (open loop), measuring the **99th-percentile response
+  time**: not "how much can it serve" but "how long does the worst 1 % wait
+  when the load is below saturation". Scheduling fairness, GC pauses and
+  arrival batching show up here — and the unit is milliseconds, not
+  requests per second.
+
+The charts show cohttp-lwt only. For context, the reference stacks measured
+in the same windows: **cohttp-eio** 68–82k req/s at saturation and p99
+4.0 / 4.6 / 8.5 ms at 5k/10k/20k; **httpcats** (Miou, 1 domain) 32.6k req/s
+and p99 8.1 / 7.8 / 5.2 ms. Both are *very different implementations* (a
+recent Eio-native stack; an h1-based stack on Miou): they bound the design
+space but do not compare schedulers — §7 does that properly, holding the
+HTTP engine constant.
 
 | config | saturation (req/s, /plaintext) | p99 @5k | p99 @10k | p99 @20k |
 |---|---|---|---|---|

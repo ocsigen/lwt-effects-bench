@@ -1,23 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="286" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
-<rect width="760" height="286" fill="white"/>
-<text x="16" y="24" font-size="16" font-weight="700">Realistic HTTP - saturation</text>
-<text x="16" y="42" fill="#5f6368">GET /plaintext, wrk -t4 -c64, one core; stack comparison (cohttp-lwt vs cohttp-eio vs httpcats) — higher is better ↑ (requests / second)</text>
-<text x="240" y="72" text-anchor="end" font-weight="700">cohttp-eio</text>
-<rect x="250" y="54" width="440" height="26" rx="3" fill="#e8710a"/>
-<text x="698" y="72" fill="#202124" font-weight="700">75,000 ★</text>
-<text x="240" y="110" text-anchor="end">cohttp-lwt, classic (io_uring)</text>
-<rect x="250" y="92" width="264" height="26" rx="3" fill="#00796b" opacity="0.72"/>
-<text x="522" y="110" fill="#202124">45,018</text>
-<text x="240" y="148" text-anchor="end">cohttp-lwt, effect core (io_uring)</text>
-<rect x="250" y="130" width="253" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
-<text x="511" y="148" fill="#202124">43,100</text>
-<text x="240" y="186" text-anchor="end">cohttp-lwt, classic (libev)</text>
-<rect x="250" y="168" width="208" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
-<text x="466" y="186" fill="#202124">35,482</text>
-<text x="240" y="224" text-anchor="end">cohttp-lwt, effect core (libev)</text>
-<rect x="250" y="206" width="205" height="26" rx="3" fill="#a8c7fa" opacity="0.72"/>
-<text x="463" y="224" fill="#202124">34,999</text>
-<text x="240" y="262" text-anchor="end">httpcats (Miou, 1 domain)</text>
-<rect x="250" y="244" width="191" height="26" rx="3" fill="#8430ce" opacity="0.72"/>
-<text x="449" y="262" fill="#202124">32,600</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="210" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
+<rect width="760" height="210" fill="white"/>
+<text x="16" y="24" font-size="16" font-weight="700">cohttp-lwt-unix under an external load generator - saturation</text>
+<text x="16" y="42" fill="#5f6368">GET /plaintext, wrk -t4 -c64 keep-alive, one core — higher is better ↑ (requests / second)</text>
+<text x="240" y="72" text-anchor="end">effect core (io_uring)</text>
+<rect x="250" y="54" width="421" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
+<text x="679" y="72" fill="#202124">43,100</text>
+<text x="240" y="110" text-anchor="end">effect core (libev)</text>
+<rect x="250" y="92" width="342" height="26" rx="3" fill="#a8c7fa" opacity="0.72"/>
+<text x="600" y="110" fill="#202124">34,999</text>
+<text x="240" y="148" text-anchor="end" font-weight="700">classic (io_uring)</text>
+<rect x="250" y="130" width="440" height="26" rx="3" fill="#00796b"/>
+<text x="698" y="148" fill="#202124" font-weight="700">45,018 ★</text>
+<text x="240" y="186" text-anchor="end">classic (libev)</text>
+<rect x="250" y="168" width="347" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
+<text x="605" y="186" fill="#202124">35,482</text>
 </svg>

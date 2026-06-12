@@ -5,22 +5,22 @@
 <text x="240" y="72" text-anchor="end" font-weight="700">lab: breaking + own ring</text>
 <rect x="250" y="54" width="440" height="26" rx="3" fill="#455a64"/>
 <text x="698" y="72" fill="#202124" font-weight="700">108,037 ★</text>
-<text x="240" y="110" text-anchor="end">Eio (io_uring)</text>
-<rect x="250" y="92" width="395" height="26" rx="3" fill="#e8710a" opacity="0.72"/>
-<text x="653" y="110" fill="#202124">97,100</text>
-<text x="240" y="148" text-anchor="end">Lwt effect core (io_uring)</text>
-<rect x="250" y="130" width="389" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
-<text x="647" y="148" fill="#202124">95,500</text>
-<text x="240" y="186" text-anchor="end">Lwt classic (io_uring)</text>
-<rect x="250" y="168" width="377" height="26" rx="3" fill="#00796b" opacity="0.72"/>
-<text x="635" y="186" fill="#202124">92,600</text>
-<text x="240" y="224" text-anchor="end">Lwt classic (epoll)</text>
-<rect x="250" y="206" width="290" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
-<text x="548" y="224" fill="#202124">71,300</text>
-<text x="240" y="262" text-anchor="end">Lwt effect core (epoll)</text>
-<rect x="250" y="244" width="287" height="26" rx="3" fill="#a8c7fa" opacity="0.72"/>
-<text x="545" y="262" fill="#202124">70,400</text>
-<text x="240" y="300" text-anchor="end">Miou (ppoll)</text>
-<rect x="250" y="282" width="88" height="26" rx="3" fill="#8430ce" opacity="0.72"/>
-<text x="346" y="300" fill="#202124">21,500</text>
+<text x="240" y="110" text-anchor="end">Miou (ppoll)</text>
+<rect x="250" y="92" width="88" height="26" rx="3" fill="#8430ce" opacity="0.72"/>
+<text x="346" y="110" fill="#202124">21,500</text>
+<text x="240" y="148" text-anchor="end">Eio (io_uring)</text>
+<rect x="250" y="130" width="395" height="26" rx="3" fill="#e8710a" opacity="0.72"/>
+<text x="653" y="148" fill="#202124">97,100</text>
+<text x="240" y="186" text-anchor="end">Lwt effect core (io_uring)</text>
+<rect x="250" y="168" width="389" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
+<text x="647" y="186" fill="#202124">95,500</text>
+<text x="240" y="224" text-anchor="end">Lwt effect core (epoll)</text>
+<rect x="250" y="206" width="287" height="26" rx="3" fill="#a8c7fa" opacity="0.72"/>
+<text x="545" y="224" fill="#202124">70,400</text>
+<text x="240" y="262" text-anchor="end">Lwt classic (io_uring)</text>
+<rect x="250" y="244" width="377" height="26" rx="3" fill="#00796b" opacity="0.72"/>
+<text x="635" y="262" fill="#202124">92,600</text>
+<text x="240" y="300" text-anchor="end">Lwt classic (epoll)</text>
+<rect x="250" y="282" width="290" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
+<text x="548" y="300" fill="#202124">71,300</text>
 </svg>

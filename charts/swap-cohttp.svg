@@ -1,26 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="324" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
-<rect width="760" height="324" fill="white"/>
-<text x="16" y="24" font-size="16" font-weight="700">cohttp - unmodified cohttp-lwt-unix, recompiled</text>
-<text x="16" y="42" fill="#5f6368">50 conn x 200 req, GET /, new connection per request — higher is better ↑ (requests / second)</text>
-<text x="240" y="72" text-anchor="end" font-weight="700">cohttp-eio</text>
-<rect x="250" y="54" width="440" height="26" rx="3" fill="#e8710a"/>
-<text x="698" y="72" fill="#202124" font-weight="700">8,964 ★</text>
-<text x="240" y="110" text-anchor="end">Lwt effect core (io_uring, multishot + static resolver)</text>
-<rect x="250" y="92" width="401" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
-<text x="659" y="110" fill="#202124">8,174</text>
-<text x="240" y="148" text-anchor="end">Lwt classic (io_uring, static resolver)</text>
-<rect x="250" y="130" width="377" height="26" rx="3" fill="#00796b" opacity="0.72"/>
-<text x="635" y="148" fill="#202124">7,671</text>
-<text x="240" y="186" text-anchor="end">Lwt effect core (io_uring, multishot)</text>
-<rect x="250" y="168" width="367" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
-<text x="625" y="186" fill="#202124">7,486</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="286" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
+<rect width="760" height="286" fill="white"/>
+<text x="16" y="24" font-size="16" font-weight="700">cohttp-lwt-unix, unmodified, recompiled against each core</text>
+<text x="16" y="42" fill="#5f6368">50 conn x 200 req, GET /, new connection per request, in-process client — higher is better ↑ (requests / second)</text>
+<text x="240" y="72" text-anchor="end" font-weight="700">Lwt effect core (io_uring, multishot + static resolver)</text>
+<rect x="250" y="54" width="440" height="26" rx="3" fill="#1a73e8"/>
+<text x="698" y="72" fill="#202124" font-weight="700">8,174 ★</text>
+<text x="240" y="110" text-anchor="end">Lwt effect core (io_uring, multishot)</text>
+<rect x="250" y="92" width="403" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
+<text x="661" y="110" fill="#202124">7,486</text>
+<text x="240" y="148" text-anchor="end">Lwt effect core (epoll)</text>
+<rect x="250" y="130" width="353" height="26" rx="3" fill="#a8c7fa" opacity="0.72"/>
+<text x="611" y="148" fill="#202124">6,557</text>
+<text x="240" y="186" text-anchor="end">Lwt classic (io_uring, static resolver)</text>
+<rect x="250" y="168" width="413" height="26" rx="3" fill="#00796b" opacity="0.72"/>
+<text x="671" y="186" fill="#202124">7,671</text>
 <text x="240" y="224" text-anchor="end">Lwt classic (io_uring)</text>
-<rect x="250" y="206" width="342" height="26" rx="3" fill="#00796b" opacity="0.72"/>
-<text x="600" y="224" fill="#202124">6,964</text>
-<text x="240" y="262" text-anchor="end">Lwt effect core (epoll)</text>
-<rect x="250" y="244" width="322" height="26" rx="3" fill="#a8c7fa" opacity="0.72"/>
-<text x="580" y="262" fill="#202124">6,557</text>
-<text x="240" y="300" text-anchor="end">Lwt classic (epoll)</text>
-<rect x="250" y="282" width="300" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
-<text x="558" y="300" fill="#202124">6,105</text>
+<rect x="250" y="206" width="375" height="26" rx="3" fill="#00796b" opacity="0.72"/>
+<text x="633" y="224" fill="#202124">6,964</text>
+<text x="240" y="262" text-anchor="end">Lwt classic (epoll)</text>
+<rect x="250" y="244" width="329" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
+<text x="587" y="262" fill="#202124">6,105</text>
 </svg>

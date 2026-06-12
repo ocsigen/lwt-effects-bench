@@ -76,45 +76,54 @@ MIOU       = "#8430ce"   # Miou
 # 856e73f18 + pause-cadence conformance 7c7f9a438), 2-3 interleaved rounds,
 # cool machine; midpoints of rounds (mins for pingpong, best-of-3 for cohttp),
 # matching the README tables.
+#
+# UNIFORM ROW ORDER, bottom -> top: Lwt classic epoll, Lwt classic io_uring,
+# Lwt effect epoll, Lwt effect io_uring, (Lwt_direct,) Eio, Miou, lab.
+# (Rows render top to bottom, so the lists below are written in REVERSE.)
+# The cohttp-family charts show cohttp-lwt ONLY: cohttp-eio and httpcats are
+# very different implementations — their numbers are quoted in the README
+# text, not drawn as bars people would compare at a glance. The httpun chart
+# keeps the Eio bar: there the protocol engine is identical (that is its
+# whole point).
 
 chart(p("swap-scheduling.svg"),
       "Scheduling - pure cooperative yielding",
       "1000 fibers x 1000 yields, no I/O", "ns per yield",
-      [("Miou (ppoll)", 425, MIOU),
-       ("Lwt classic (pause)", 245, CLA_LIGHT),
-       ("Lwt effect core (pause)", 230, EFF_LIGHT),
-       ("Lwt_direct on effect core", 72, DIRECT),
+      [("lab: breaking direct yield", 59, LAB_LIGHT),
+       ("Miou (ppoll)", 425, MIOU),
        ("Eio", 88, EIO),
-       ("lab: breaking direct yield", 59, LAB_LIGHT)],
+       ("Lwt_direct on effect core", 72, DIRECT),
+       ("Lwt effect core (pause)", 230, EFF_LIGHT),
+       ("Lwt classic (pause)", 245, CLA_LIGHT)],
       lower_better=True)
 
 chart(p("swap-bind.svg"),
       "Monadic bind - resolved (the hot path)",
       "chain of 1000 binds over return x 1000 (Lwt-family only)", "ns per bind",
-      [("Lwt classic core", 11.0, CLA_LIGHT),
-       ("lab: breaking effect bind", 9.5, LAB_LIGHT),
-       ("Lwt effect core", 5.2, EFF_LIGHT)],
+      [("lab: breaking effect bind", 9.5, LAB_LIGHT),
+       ("Lwt effect core", 5.2, EFF_LIGHT),
+       ("Lwt classic core", 11.0, CLA_LIGHT)],
       lower_better=True)
 
 chart(p("swap-bind-suspended.svg"),
       "Monadic bind - suspended, through Lwt_main.run",
       "chain of 1000 binds over pause x 1000; one engine lap per pause "
       "generation (classic Lwt semantics)", "ns per bind",
-      [("Lwt classic core", 1417, CLA_LIGHT),
+      [("lab: own scheduler, no engine to run", 96, LAB_LIGHT),
        ("Lwt effect core", 1273, EFF_LIGHT),
-       ("lab: own scheduler, no engine to run", 96, LAB_LIGHT)],
+       ("Lwt classic core", 1417, CLA_LIGHT)],
       lower_better=True)
 
 chart(p("swap-pingpong.svg"),
       "Ping-pong latency over a socketpair (1 byte)",
       "round-trip latency (bigarray rows for io_uring)", "us per round-trip",
-      [("Miou (ppoll)", 22.8, MIOU),
-       ("Lwt classic (epoll)", 9.9, CLA_LIGHT),
+      [("lab: breaking + own ring", 6.1, LAB_DARK),
+       ("Miou (ppoll)", 22.8, MIOU),
+       ("Eio (io_uring)", 6.4, EIO),
+       ("Lwt effect core (io_uring)", 7.3, EFF_DARK),
        ("Lwt effect core (epoll)", 9.6, EFF_LIGHT),
        ("Lwt classic (io_uring)", 7.4, CLA_DARK),
-       ("Lwt effect core (io_uring)", 7.3, EFF_DARK),
-       ("Eio (io_uring)", 6.4, EIO),
-       ("lab: breaking + own ring", 6.1, LAB_DARK)],
+       ("Lwt classic (epoll)", 9.9, CLA_LIGHT)],
       lower_better=True)
 
 chart(p("swap-echo.svg"),
@@ -122,64 +131,60 @@ chart(p("swap-echo.svg"),
       "100 conn x 1000 msgs x 64 B; the three io_uring rows are a "
       "statistical tie", "round-trips / second",
       [("lab: breaking + own ring", 108037, LAB_DARK),
+       ("Miou (ppoll)", 21500, MIOU),
        ("Eio (io_uring)", 97100, EIO),
        ("Lwt effect core (io_uring)", 95500, EFF_DARK),
-       ("Lwt classic (io_uring)", 92600, CLA_DARK),
-       ("Lwt classic (epoll)", 71300, CLA_LIGHT),
        ("Lwt effect core (epoll)", 70400, EFF_LIGHT),
-       ("Miou (ppoll)", 21500, MIOU)],
+       ("Lwt classic (io_uring)", 92600, CLA_DARK),
+       ("Lwt classic (epoll)", 71300, CLA_LIGHT)],
       lower_better=False)
 
 chart(p("swap-cohttp.svg"),
-      "cohttp - unmodified cohttp-lwt-unix, recompiled",
-      "50 conn x 200 req, GET /, new connection per request", "requests / second",
-      [("cohttp-eio", 8964, EIO),
-       ("Lwt effect core (io_uring, multishot + static resolver)", 8174, EFF_DARK),
-       ("Lwt classic (io_uring, static resolver)", 7671, CLA_DARK),
+      "cohttp-lwt-unix, unmodified, recompiled against each core",
+      "50 conn x 200 req, GET /, new connection per request, in-process "
+      "client", "requests / second",
+      [("Lwt effect core (io_uring, multishot + static resolver)", 8174, EFF_DARK),
        ("Lwt effect core (io_uring, multishot)", 7486, EFF_DARK),
-       ("Lwt classic (io_uring)", 6964, CLA_DARK),
        ("Lwt effect core (epoll)", 6557, EFF_LIGHT),
+       ("Lwt classic (io_uring, static resolver)", 7671, CLA_DARK),
+       ("Lwt classic (io_uring)", 6964, CLA_DARK),
        ("Lwt classic (epoll)", 6105, CLA_LIGHT)],
       lower_better=False)
 
 # ============ realistic HTTP suite (README section 6) ============
 # wrk2 over real TCP; post-leak-fix interleaved runs (results/retro2-*,
-# plain2-*). cohttp-eio and httpcats rows from the same day's window.
+# plain2-*). cohttp-lwt only on the charts; cohttp-eio and httpcats are
+# quoted in the README text (different implementations).
 
 chart(p("swap-http-saturation.svg"),
-      "Realistic HTTP - saturation",
-      "GET /plaintext, wrk -t4 -c64, one core; stack comparison "
-      "(cohttp-lwt vs cohttp-eio vs httpcats)", "requests / second",
-      [("cohttp-eio", 75000, EIO),
-       ("cohttp-lwt, classic (io_uring)", 45018, CLA_DARK),
-       ("cohttp-lwt, effect core (io_uring)", 43100, EFF_DARK),
-       ("cohttp-lwt, classic (libev)", 35482, CLA_LIGHT),
-       ("cohttp-lwt, effect core (libev)", 34999, EFF_LIGHT),
-       ("httpcats (Miou, 1 domain)", 32600, MIOU)],
+      "cohttp-lwt-unix under an external load generator - saturation",
+      "GET /plaintext, wrk -t4 -c64 keep-alive, one core", "requests / second",
+      [("effect core (io_uring)", 43100, EFF_DARK),
+       ("effect core (libev)", 34999, EFF_LIGHT),
+       ("classic (io_uring)", 45018, CLA_DARK),
+       ("classic (libev)", 35482, CLA_LIGHT)],
       lower_better=False)
 
 chart(p("swap-http-p99.svg"),
-      "Realistic HTTP - latency tail at 20k req/s",
-      "GET / (2 KB), wrk2 -R 20000, p99 (median over rounds)", "ms",
-      [("cohttp-lwt, effect core (libev)", 18.5, EFF_LIGHT),
-       ("cohttp-lwt, effect core (io_uring)", 17.3, EFF_DARK),
-       ("cohttp-lwt, classic (libev)", 16.4, CLA_LIGHT),
-       ("cohttp-lwt, classic (io_uring)", 13.1, CLA_DARK),
-       ("cohttp-eio", 8.5, EIO),
-       ("httpcats (Miou, 1 domain)", 5.2, MIOU)],
+      "cohttp-lwt-unix under an external load generator - tail latency",
+      "GET / (2 KB), wrk2 at a fixed 20k req/s, p99 (median over rounds)", "ms",
+      [("effect core (io_uring)", 17.3, EFF_DARK),
+       ("effect core (libev)", 18.5, EFF_LIGHT),
+       ("classic (io_uring)", 13.1, CLA_DARK),
+       ("classic (libev)", 16.4, CLA_LIGHT)],
       lower_better=True)
 
 # httpun: one scheduler-agnostic protocol engine (the maintained httpaf
 # fork), thin Gluten adapters, the request handler shared VERBATIM between
-# the Lwt and Eio servers — the HTTP stack held constant. Midpoints of two
-# interleaved rounds (2026-06-12 evening).
+# the Lwt and Eio servers — the HTTP stack held constant, so the Eio bar
+# BELONGS on this chart. Midpoints of two interleaved rounds.
 chart(p("swap-httpun-saturation.svg"),
       "httpun - same protocol engine, scheduler isolated",
       "GET /plaintext, wrk -t4 -c64 keep-alive, one core; handler shared "
       "verbatim between the Lwt and Eio servers", "requests / second",
-      [("httpun-lwt, classic (io_uring)", 99100, CLA_DARK),
+      [("httpun-eio (gluten-eio adapter)", 34700, EIO),
        ("httpun-lwt, effect core (io_uring)", 89100, EFF_DARK),
-       ("httpun-lwt, classic (libev)", 68900, CLA_LIGHT),
        ("httpun-lwt, effect core (libev)", 67500, EFF_LIGHT),
-       ("httpun-eio (gluten-eio adapter)", 34700, EIO)],
+       ("httpun-lwt, classic (io_uring)", 99100, CLA_DARK),
+       ("httpun-lwt, classic (libev)", 68900, CLA_LIGHT)],
       lower_better=False)
