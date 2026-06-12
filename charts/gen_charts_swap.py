@@ -78,7 +78,8 @@ MIOU       = "#8430ce"   # Miou
 # matching the README tables.
 #
 # UNIFORM ROW ORDER, bottom -> top: Lwt classic epoll, Lwt classic io_uring,
-# Lwt effect epoll, Lwt effect io_uring, (Lwt_direct,) Eio, Miou, lab.
+# Lwt effect epoll, Lwt effect io_uring, (Lwt_direct,) lab — the lab rows
+# stay grouped with the Lwt family, capping its block — then Eio, Miou.
 # (Rows render top to bottom, so the lists below are written in REVERSE.)
 # The cohttp-family charts show cohttp-lwt ONLY: cohttp-eio and httpcats are
 # very different implementations — their numbers are quoted in the README
@@ -89,9 +90,9 @@ MIOU       = "#8430ce"   # Miou
 chart(p("swap-scheduling.svg"),
       "Scheduling - pure cooperative yielding",
       "1000 fibers x 1000 yields, no I/O", "ns per yield",
-      [("lab: breaking direct yield", 59, LAB_LIGHT),
-       ("Miou (ppoll)", 425, MIOU),
+      [("Miou (ppoll)", 425, MIOU),
        ("Eio", 88, EIO),
+       ("lab: breaking direct yield", 59, LAB_LIGHT),
        ("Lwt_direct on effect core", 72, DIRECT),
        ("Lwt effect core (pause)", 230, EFF_LIGHT),
        ("Lwt classic (pause)", 245, CLA_LIGHT)],
@@ -117,9 +118,9 @@ chart(p("swap-bind-suspended.svg"),
 chart(p("swap-pingpong.svg"),
       "Ping-pong latency over a socketpair (1 byte)",
       "round-trip latency (bigarray rows for io_uring)", "us per round-trip",
-      [("lab: breaking + own ring", 6.1, LAB_DARK),
-       ("Miou (ppoll)", 22.8, MIOU),
+      [("Miou (ppoll)", 22.8, MIOU),
        ("Eio (io_uring)", 6.4, EIO),
+       ("lab: breaking + own ring", 6.1, LAB_DARK),
        ("Lwt effect core (io_uring)", 7.3, EFF_DARK),
        ("Lwt effect core (epoll)", 9.6, EFF_LIGHT),
        ("Lwt classic (io_uring)", 7.4, CLA_DARK),
@@ -130,9 +131,9 @@ chart(p("swap-echo.svg"),
       "Echo TCP - 100 concurrent connections",
       "100 conn x 1000 msgs x 64 B; the three io_uring rows are a "
       "statistical tie", "round-trips / second",
-      [("lab: breaking + own ring", 108037, LAB_DARK),
-       ("Miou (ppoll)", 21500, MIOU),
+      [("Miou (ppoll)", 21500, MIOU),
        ("Eio (io_uring)", 97100, EIO),
+       ("lab: breaking + own ring", 108037, LAB_DARK),
        ("Lwt effect core (io_uring)", 95500, EFF_DARK),
        ("Lwt effect core (epoll)", 70400, EFF_LIGHT),
        ("Lwt classic (io_uring)", 92600, CLA_DARK),

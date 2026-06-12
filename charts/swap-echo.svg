@@ -2,15 +2,15 @@
 <rect width="760" height="324" fill="white"/>
 <text x="16" y="24" font-size="16" font-weight="700">Echo TCP - 100 concurrent connections</text>
 <text x="16" y="42" fill="#5f6368">100 conn x 1000 msgs x 64 B; the three io_uring rows are a statistical tie — higher is better ↑ (round-trips / second)</text>
-<text x="240" y="72" text-anchor="end" font-weight="700">lab: breaking + own ring</text>
-<rect x="250" y="54" width="440" height="26" rx="3" fill="#455a64"/>
-<text x="698" y="72" fill="#202124" font-weight="700">108,037 ★</text>
-<text x="240" y="110" text-anchor="end">Miou (ppoll)</text>
-<rect x="250" y="92" width="88" height="26" rx="3" fill="#8430ce" opacity="0.72"/>
-<text x="346" y="110" fill="#202124">21,500</text>
-<text x="240" y="148" text-anchor="end">Eio (io_uring)</text>
-<rect x="250" y="130" width="395" height="26" rx="3" fill="#e8710a" opacity="0.72"/>
-<text x="653" y="148" fill="#202124">97,100</text>
+<text x="240" y="72" text-anchor="end">Miou (ppoll)</text>
+<rect x="250" y="54" width="88" height="26" rx="3" fill="#8430ce" opacity="0.72"/>
+<text x="346" y="72" fill="#202124">21,500</text>
+<text x="240" y="110" text-anchor="end">Eio (io_uring)</text>
+<rect x="250" y="92" width="395" height="26" rx="3" fill="#e8710a" opacity="0.72"/>
+<text x="653" y="110" fill="#202124">97,100</text>
+<text x="240" y="148" text-anchor="end" font-weight="700">lab: breaking + own ring</text>
+<rect x="250" y="130" width="440" height="26" rx="3" fill="#455a64"/>
+<text x="698" y="148" fill="#202124" font-weight="700">108,037 ★</text>
 <text x="240" y="186" text-anchor="end">Lwt effect core (io_uring)</text>
 <rect x="250" y="168" width="389" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
 <text x="647" y="186" fill="#202124">95,500</text>
