@@ -6,6 +6,7 @@
   lwt.unix
   lwt_uring
   cohttp
+  conduit-lwt-unix
   cohttp-lwt-unix
   cohttp-eio
   eio
@@ -14,7 +15,3 @@
   uri
   unix))
 
-(executable
- (name probe)
- (modules probe)
- (libraries lwt lwt.unix lwt_uring cohttp cohttp-lwt-unix uri unix))

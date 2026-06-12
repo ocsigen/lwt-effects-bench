@@ -48,6 +48,41 @@ let lwt_scenario ~port () =
 
 let run_lwt ~port = Lwt_main.run (lwt_scenario ~port ())
 
+(* Same scenario, but the client uses a STATIC service resolver
+   (Uri_services, pure OCaml) instead of conduit's default system_service,
+   which calls Lwt_unix.getservbyname "http" — a worker-pool job and an
+   /etc/services read — once PER REQUEST. Host resolution stays the system
+   getaddrinfo (numeric IPs take Lwt's no-job fast path). This is plain
+   client configuration (~ctx), no library change. *)
+let lwt_static_scenario ~port () =
+  let open Lwt.Infix in
+  let resolver =
+    Resolver_lwt.init ~service:Resolver_lwt_unix.static_service
+      ~rewrites:[ ("", Resolver_lwt_unix.system_resolver) ] ()
+  in
+  let ctx = Cohttp_lwt_unix.Net.init ~resolver () in
+  let uri = Uri.of_string (Printf.sprintf "http://127.0.0.1:%d/" port) in
+  let stop, do_stop = Lwt.wait () in
+  let callback _conn _req _body = LServer.respond_string ~status:`OK ~body:"hello" () in
+  let srv = LServer.create ~stop ~mode:(`TCP (`Port port)) (LServer.make ~callback ()) in
+  let client () =
+    let rec loop i =
+      if i = 0 then Lwt.return_unit
+      else
+        LClient.get ~ctx uri >>= fun (_resp, body) ->
+        Cohttp_lwt.Body.drain_body body >>= fun () -> loop (i - 1)
+    in
+    loop reqs
+  in
+  Lwt_unix.sleep 0.3 >>= fun () ->
+  let t0 = Unix.gettimeofday () in
+  Lwt.join (List.init conns (fun _ -> client ())) >>= fun () ->
+  let dt = Unix.gettimeofday () -. t0 in
+  Lwt.wakeup do_stop ();
+  srv >>= fun () -> Lwt.return dt
+
+let run_lwt_static ~port = Lwt_main.run (lwt_static_scenario ~port ())
+
 (* ------------------------------------------------------------------ *)
 (* cohttp-eio                                                         *)
 (* ------------------------------------------------------------------ *)
@@ -95,8 +130,14 @@ let () =
     (Printf.sprintf "cohttp-lwt-unix [%s]" core)
     (run_lwt ~port:18931);
   report "cohttp-eio" (run_eio ~port:18933);
+  report
+    (Printf.sprintf "cohttp-lwt-unix [%s] static-rsv" core)
+    (run_lwt_static ~port:18935);
   (* Pass 2: the io_uring engine, installed process-globally. *)
   Lwt_uring.set ();
   report
     (Printf.sprintf "cohttp-lwt-unix [%s]+uring" core)
-    (run_lwt ~port:18934)
+    (run_lwt ~port:18934);
+  report
+    (Printf.sprintf "cohttp-lwt-unix [%s]+uring static-rsv" core)
+    (run_lwt_static ~port:18936)

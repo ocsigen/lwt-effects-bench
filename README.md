@@ -154,27 +154,44 @@ The same `cohttp-lwt-unix` 6.2.1, **untouched**, recompiled against each core
 (opam pin), `Client.get`, new connection per request (best of interleaved
 runs; this benchmark has the largest run-to-run variance):
 
-| config | req/s |
-|---|---|
-| cohttp-eio | 8 597 – 8 851 |
-| cohttp-lwt (effect core, io_uring + **multishot accept**) | **6 627 – 6 858** |
-| cohttp-lwt (classic core, io_uring) | 6 585 – 6 689 |
-| cohttp-lwt (effect core, epoll) | 6 149 – 6 178 |
-| cohttp-lwt (classic core, epoll) | 5 659 – 5 751 |
+| config (best of interleaved runs) | classic | effect core |
+|---|---|---|
+| epoll | 6 403 | **6 957** (+9 %) |
+| epoll + static resolver | 6 676 | **7 326** |
+| io_uring (+ multishot accept on the effect core) | 7 172 | **7 975** (+11 %) |
+| io_uring + static resolver | 7 766 | **7 978** |
+| cohttp-eio | | 9 040 – 9 444 |
 
-In the interleaved pairs the effect core is consistently ~+7-9 % over classic
-on epoll. The io_uring rows now include **multishot accept**
-(`IORING_ACCEPT_MULTISHOT`, via a locally patched ocaml-uring): one
-submission per listening socket, one completion per accepted connection — no
-accept(2) and no fcntl per accept. It turned the previously *rejected* accept
-routing into a win (new-connection microbenchmark: libev 17.4k, connect-only
-~20.5k, single-shot accept ~14k, **connect + multishot accept 20.9k
-conn/s**), is worth ~+2-3 % on cohttp, and the remaining gap to cohttp-eio is
-the client side (socket/fcntl/connect per request — needs IORING_OP_SOCKET,
-not exposed by ocaml-uring) plus the stack itself. A keep-alive workload
-amortizes all of this away. (The POC's higher "native" bar was cohttp's
-*codecs only* on a hand-written backend, not a usable stack — see the old
-report.)
+Three levers, found by syscall accounting (~13 syscalls and ~4 worker-pool
+thread round-trips per request initially), progressively closed the gap to
+cohttp-eio from ~25 % to ~15 %:
+
+1. **Multishot accept** (`IORING_ACCEPT_MULTISHOT`, via a locally patched
+   ocaml-uring): one submission per listening socket, one completion per
+   accepted connection — no accept(2), no fcntl per accept. It turned the
+   previously *rejected* accept routing into a win (new-connection
+   microbenchmark: libev 17.4k → connect+multishot 21.7k conn/s; single-shot
+   accept had measured ~14k).
+2. **`Lwt_unix.getaddrinfo` numeric fast path** (an lwt improvement): a
+   numeric host with an all-digits port resolves synchronously
+   (AI_NUMERICHOST), with no DNS, no worker-pool job — conduit resolves the
+   host once per request.
+3. **Static service resolver** (pure client configuration, `~ctx`): conduit's
+   default resolver calls `Lwt_unix.getservbyname "http"` — a worker-pool
+   job and an /etc/services read — once per request; `Resolver_lwt_unix.
+   static_service` (Uri_services, pure OCaml) eliminates it. This of course
+   helps the classic core too.
+
+Also tried and **rejected by measurement**: routing close(2) through the ring
+(IORING_OP_CLOSE) — the worker pool performs closes on another core, in
+parallel with the event loop, and the ring version measured slower (the
+negative result is recorded in a comment in lwt_unix). The remaining gap to
+cohttp-eio is the client-side socket setup (2 fcntl per connection — needs
+IORING_OP_SOCKET or a SOCK_NONBLOCK socket stub, <1 %) and the cohttp-lwt
+stack itself (an `Lwt_io` buffered channel pair per connection, parsing). A
+keep-alive workload amortizes the per-connection costs away. (The POC's
+higher "native" bar was cohttp's *codecs only* on a hand-written backend, not
+a usable stack — see the old report.)
 
 ## Comparing with the POC
 
