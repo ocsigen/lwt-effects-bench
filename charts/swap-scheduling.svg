@@ -2,7 +2,7 @@
 <rect width="760" height="286" fill="white"/>
 <text x="16" y="24" font-size="16" font-weight="700">Scheduling - pure cooperative yielding</text>
 <text x="16" y="42" fill="#5f6368">1000 fibers x 1000 yields, no I/O — lower is better ↓ (ns per yield)</text>
-<text x="240" y="72" text-anchor="end">Miou</text>
+<text x="240" y="72" text-anchor="end">Miou (ppoll)</text>
 <rect x="250" y="54" width="440" height="26" rx="3" fill="#8430ce" opacity="0.72"/>
 <text x="698" y="72" fill="#202124">409</text>
 <text x="240" y="110" text-anchor="end">Lwt classic (pause)</text>

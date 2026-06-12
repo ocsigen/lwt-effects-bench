@@ -1,5 +1,6 @@
 (executable
  (name bench)
+ (modules bench)
  (libraries
   lwt
   lwt.unix
@@ -12,3 +13,8 @@
   eio.unix
   uri
   unix))
+
+(executable
+ (name probe)
+ (modules probe)
+ (libraries lwt lwt.unix lwt_uring cohttp cohttp-lwt-unix uri unix))

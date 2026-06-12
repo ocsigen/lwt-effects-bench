@@ -20,7 +20,7 @@
 <text x="240" y="262" text-anchor="end">Lwt classic (epoll)</text>
 <rect x="250" y="244" width="298" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
 <text x="556" y="262" fill="#202124">73,145</text>
-<text x="240" y="300" text-anchor="end">Miou</text>
+<text x="240" y="300" text-anchor="end">Miou (ppoll)</text>
 <rect x="250" y="282" width="89" height="26" rx="3" fill="#8430ce" opacity="0.72"/>
 <text x="347" y="300" fill="#202124">21,898</text>
 </svg>

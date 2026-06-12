@@ -2,7 +2,7 @@
 <rect width="760" height="324" fill="white"/>
 <text x="16" y="24" font-size="16" font-weight="700">Ping-pong latency over a socketpair (1 byte)</text>
 <text x="16" y="42" fill="#5f6368">round-trip latency (bigarray rows for io_uring) — lower is better ↓ (us per round-trip)</text>
-<text x="240" y="72" text-anchor="end">Miou</text>
+<text x="240" y="72" text-anchor="end">Miou (ppoll)</text>
 <rect x="250" y="54" width="440" height="26" rx="3" fill="#8430ce" opacity="0.72"/>
 <text x="698" y="72" fill="#202124">21.8</text>
 <text x="240" y="110" text-anchor="end">Lwt classic (epoll)</text>

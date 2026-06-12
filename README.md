@@ -42,13 +42,15 @@ style, private io_uring ring, no `Lwt_unix`). It is the "how fast could it go
 if we gave up Lwt's semantics and API" reference — kept experimental,
 deliberately not what the swap ships.
 
-**Eio** (`eio_main` 1.3, io_uring via `eio_linux`) and **Miou** (0.6) are the
+**Eio** (`eio_main` 1.3, io_uring via `eio_linux`) and **Miou** (0.6,
+`miou.unix` — which multiplexes with `ppoll` on this machine; its `select`
+implementation is only the fallback when `ppoll` is unavailable) are the
 external references.
 
 **Chart colour code**: colour = scheduler family — **blue** = effect core
 (vivid for io_uring, light for epoll), **blue-green** = classic core (dark
-for io_uring, light for epoll), **dark blue-grey** = lab; orange = Eio;
-purple = Miou. The vivid-blue bar (effect core + io_uring) is the
+for io_uring, light for epoll), **dark blue-grey** = lab; orange = Eio (io_uring);
+purple = Miou (ppoll — verified with strace; select is only its fallback). The vivid-blue bar (effect core + io_uring) is the
 configuration this work ships.
 
 ## Results
