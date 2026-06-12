@@ -1,0 +1,22 @@
+(executables
+ (names server_cohttp_lwt server_cohttp_eio server_httpcats)
+ (modules alice server_cohttp_lwt server_cohttp_eio server_httpcats)
+ (libraries
+  lwt
+  lwt.unix
+  lwt_uring
+  cohttp
+  cohttp-lwt-unix
+  conduit-lwt-unix
+  cohttp-eio
+  eio
+  eio_main
+  eio.unix
+  logs
+  logs.fmt
+  httpcats
+  h1
+  miou
+  miou.unix
+  uri
+  unix))

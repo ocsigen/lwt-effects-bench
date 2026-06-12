@@ -193,6 +193,57 @@ keep-alive workload amortizes the per-connection costs away. (The POC's
 higher "native" bar was cohttp's *codecs only* on a hand-written backend, not
 a usable stack — see the old report.)
 
+
+## 6. Realistic HTTP benchmarks — replicated from existing suites
+
+Two existing methodologies were reproduced as faithfully as possible
+(server sources taken verbatim from the upstream repositories, marked
+deviations only), with an external load generator (wrk2, built from source)
+over real TCP — no in-process client:
+
+- **[ocaml-multicore/retro-httpaf-bench](https://github.com/ocaml-multicore/retro-httpaf-bench)**:
+  `GET /` with a fixed ~2 KB body (and an `Lwt.pause` per request in the
+  cohttp-lwt server, as upstream), wrk2 at *fixed rates* with latency
+  percentiles (their `json.lua`), scaled to one laptop core
+  (`-t 4 -c 100 -d 20s`, rates 5k/10k/20k; upstream uses `-t 24 -c 1000` up
+  to 400k on server hardware).
+- **[robur-coop/httpcats bench protocol](https://github.com/robur-coop/httpcats/tree/main/bench)**:
+  `GET /plaintext` ("Hello, World!"), wrk at saturation, repeated runs.
+  Their Miou server (`smiou.ml`) is reproduced verbatim, run with
+  `DOMAINS=1` for a single-core comparison.
+
+Servers: cohttp-lwt-unix (retro's, classic and effect cores × libev and
+io_uring — `conf-libev` is now installed, so the libev rows are real libev),
+cohttp-eio (retro's, debug logging off), httpcats/Miou (theirs). Sources and
+runner in [http/](http/).
+
+| config | saturation (req/s, /plaintext) | p99 @5k | p99 @10k | p99 @20k (µs→ms) |
+|---|---|---|---|---|
+| cohttp-eio | **68–82k** | **4.0 ms** | **4.6 ms** | 8.5 ms |
+| Lwt classic, io_uring | 44.1–44.6k | 6.0 ms | 7.6 ms | 20.2 ms |
+| Lwt effect core, io_uring | 38.8–39.4k | 4.9 ms | 12.3 ms | 36–84 ms ⚠ |
+| Lwt classic, libev | 34–35k | 5.2 ms | 14.5 ms | 18.6 ms |
+| Lwt effect core, libev | 34k | 6.9 ms | 12.1 ms | 36–120 ms ⚠ |
+| httpcats (Miou, 1 domain) | 32.6k | 8.1 ms | 7.8 ms | **5.2 ms** |
+
+Honest findings — this is exactly what the realistic suite is for, neither
+shows up in the in-process micro-benchmarks:
+
+1. **The effect core has a tail-latency problem near saturation** (p99
+   36–120 ms at 20k req/s vs classic's 18–20 ms, while its p50 stays fine or
+   better). The signature (good median, terrible tail) points at scheduling
+   fairness under sustained load — first item of the next investigation.
+2. **At saturation the effect core is ~12 % behind classic** on this real
+   server (39k vs 44.6k with io_uring) — the in-process echo showed parity;
+   a sustained real HTTP pipeline does not (suspected: same cause as the
+   tail).
+3. The transparent io_uring engine is worth **+26 %** to classic Lwt at
+   saturation (35k → 44.6k) — its largest measured win, on unchanged code.
+4. httpcats/Miou has the most *stable* latency of the table (p99 5–8 ms at
+   every rate) at modest throughput — consistent with its bench report's
+   claims about scheduler fairness; cohttp-eio dominates this single-core
+   table on both axes.
+
 ## Comparing with the POC
 
 The POC configurations were **re-run during this campaign** (same machine

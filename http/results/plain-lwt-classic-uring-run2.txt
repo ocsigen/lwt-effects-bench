@@ -1,0 +1,12 @@
+Running 20s test @ http://127.0.0.1:18960/plaintext
+  4 threads and 64 connections
+  Thread calibration: mean lat.: 4744.525ms, rate sampling interval: 17612ms
+  Thread calibration: mean lat.: 4743.728ms, rate sampling interval: 17612ms
+  Thread calibration: mean lat.: 4446.257ms, rate sampling interval: 16007ms
+  Thread calibration: mean lat.: 4745.035ms, rate sampling interval: 17629ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    14.42s     2.84s   19.53s    57.96%
+    Req/Sec       -nan      -nan   0.00      0.00%
+  892200 requests in 20.00s, 86.79MB read
+Requests/sec:  44612.58
+Transfer/sec:      4.34MB
