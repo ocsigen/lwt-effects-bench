@@ -162,11 +162,15 @@ changes is which lwt is linked:
 `miou.unix`, which multiplexes with `ppoll` on this machine) are the
 external references.
 
-**Chart colour code**: colour = scheduler family — **blue** = effect core
-(vivid for io_uring, light for epoll), **blue-green** = classic core (dark
-for io_uring, light for epoll), **dark blue-grey** = lab; orange = Eio
-(io_uring); purple = Miou (ppoll). The vivid-blue bar (effect core +
-io_uring) is the configuration this work ships.
+**Chart colour code**: the **bright magenta bar is the configuration this
+work ships** — the effect core on the io_uring engine, labeled
+**“Lwt effects (io_uring)”** in every chart (multishot accept included: it
+is part of the engine, not an option). The other colours are families:
+light blue = the effect core on epoll/libev, mid blue = the shipped
+configuration plus an *optional client-side configuration* (e.g. the static
+resolver), blue-green = classic core (dark: io_uring, light: epoll), dark
+blue-grey = lab, orange = Eio (io_uring), purple = Miou (ppoll). All Lwt
+rows in all charts were measured with the final shipped code.
 
 ## The benchmarks, why they are relevant, and the results
 
@@ -332,9 +336,15 @@ fixed body to `GET /`; 50 concurrent client fibers each perform 200
 `Client.get`, opening a **new connection per request** — client and server
 share the process and the core (closed loop), so absolute numbers are low
 by construction. A second pass installs the io_uring engine
-(`Lwt_uring.set ()`, process-global); the *static resolver* rows change
-only client configuration (`~ctx`). Best of 3 interleaved rounds — this
+(`Lwt_uring.set ()`, process-global). Best of 3 interleaved rounds — this
 benchmark has the largest run-to-run variance of the suite.
+
+Reading the rows: the magenta **“Lwt effects (io_uring)”** bar is the
+shipped configuration, out of the box — multishot accept is built into its
+engine, not something to enable. The **“+ static resolver”** rows are *not
+a different lwt*: a one-line client configuration (`~ctx`) that avoids a
+per-request `getservbyname`; it benefits both cores equally and is shown
+as the optional extra it is.
 
 The chart shows cohttp-lwt only: for context, **cohttp-eio** measured
 8 495–8 964 req/s in the same windows — but it is a recent, independent

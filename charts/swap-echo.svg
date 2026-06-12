@@ -11,10 +11,10 @@
 <text x="240" y="148" text-anchor="end" font-weight="700">lab: breaking + own ring</text>
 <rect x="250" y="130" width="440" height="26" rx="3" fill="#455a64"/>
 <text x="698" y="148" fill="#202124" font-weight="700">108,037 ★</text>
-<text x="240" y="186" text-anchor="end">Lwt effect core (io_uring)</text>
-<rect x="250" y="168" width="389" height="26" rx="3" fill="#1a73e8" opacity="0.72"/>
+<text x="240" y="186" text-anchor="end">Lwt effects (io_uring)</text>
+<rect x="250" y="168" width="389" height="26" rx="3" fill="#e6007e" opacity="0.72"/>
 <text x="647" y="186" fill="#202124">95,500</text>
-<text x="240" y="224" text-anchor="end">Lwt effect core (epoll)</text>
+<text x="240" y="224" text-anchor="end">Lwt effects (epoll)</text>
 <rect x="250" y="206" width="287" height="26" rx="3" fill="#a8c7fa" opacity="0.72"/>
 <text x="545" y="224" fill="#202124">70,400</text>
 <text x="240" y="262" text-anchor="end">Lwt classic (io_uring)</text>

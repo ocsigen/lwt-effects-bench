@@ -60,10 +60,13 @@ def p(name): return os.path.join(here, name)
 
 
 # ============ corrected campaign + multishot accept + lab ============
-# Colour = scheduler family; DARK shade = io_uring, LIGHT shade = epoll.
-# The flagship (effect core + io_uring) is the most saturated bar.
-EFF_DARK   = "#1a73e8"   # Lwt effect core, io_uring: vivid blue <- the one we want
-EFF_LIGHT  = "#a8c7fa"   # Lwt effect core, epoll: light blue
+# THE SHIPPED CONFIGURATION — the effect core on the io_uring engine
+# (multishot accept included: it is part of the engine, not an option) —
+# is bright magenta and labeled "Lwt effects (io_uring)" in EVERY chart.
+# Other colours = scheduler family; DARK shade = io_uring, LIGHT = epoll.
+FLAGSHIP   = "#e6007e"   # Lwt effects (io_uring): THE shipped config, magenta
+EFF_DARK   = "#1a73e8"   # effect core, io_uring + an optional app config
+EFF_LIGHT  = "#a8c7fa"   # effect core, epoll/libev: light blue
 CLA_DARK   = "#00796b"   # Lwt classic core, io_uring: dark blue-green (teal)
 CLA_LIGHT  = "#b2dfdb"   # Lwt classic core, epoll: light blue-green
 LAB_DARK   = "#455a64"   # lwt-effects-lab (semantics-breaking): dark blue-grey
@@ -94,7 +97,7 @@ chart(p("swap-scheduling.svg"),
        ("Eio", 88, EIO),
        ("lab: breaking direct yield", 59, LAB_LIGHT),
        ("Lwt_direct on effect core", 72, DIRECT),
-       ("Lwt effect core (pause)", 230, EFF_LIGHT),
+       ("Lwt effects (pause)", 230, FLAGSHIP),
        ("Lwt classic (pause)", 245, CLA_LIGHT)],
       lower_better=True)
 
@@ -102,7 +105,7 @@ chart(p("swap-bind.svg"),
       "Monadic bind - resolved (the hot path)",
       "chain of 1000 binds over return x 1000 (Lwt-family only)", "ns per bind",
       [("lab: breaking effect bind", 9.5, LAB_LIGHT),
-       ("Lwt effect core", 5.2, EFF_LIGHT),
+       ("Lwt effects", 5.2, FLAGSHIP),
        ("Lwt classic core", 11.0, CLA_LIGHT)],
       lower_better=True)
 
@@ -111,7 +114,7 @@ chart(p("swap-bind-suspended.svg"),
       "chain of 1000 binds over pause x 1000; one engine lap per pause "
       "generation (classic Lwt semantics)", "ns per bind",
       [("lab: own scheduler, no engine to run", 96, LAB_LIGHT),
-       ("Lwt effect core", 1273, EFF_LIGHT),
+       ("Lwt effects", 1273, FLAGSHIP),
        ("Lwt classic core", 1417, CLA_LIGHT)],
       lower_better=True)
 
@@ -121,8 +124,8 @@ chart(p("swap-pingpong.svg"),
       [("Miou (ppoll)", 22.8, MIOU),
        ("Eio (io_uring)", 6.4, EIO),
        ("lab: breaking + own ring", 6.1, LAB_DARK),
-       ("Lwt effect core (io_uring)", 7.3, EFF_DARK),
-       ("Lwt effect core (epoll)", 9.6, EFF_LIGHT),
+       ("Lwt effects (io_uring)", 7.3, FLAGSHIP),
+       ("Lwt effects (epoll)", 9.6, EFF_LIGHT),
        ("Lwt classic (io_uring)", 7.4, CLA_DARK),
        ("Lwt classic (epoll)", 9.9, CLA_LIGHT)],
       lower_better=True)
@@ -134,8 +137,8 @@ chart(p("swap-echo.svg"),
       [("Miou (ppoll)", 21500, MIOU),
        ("Eio (io_uring)", 97100, EIO),
        ("lab: breaking + own ring", 108037, LAB_DARK),
-       ("Lwt effect core (io_uring)", 95500, EFF_DARK),
-       ("Lwt effect core (epoll)", 70400, EFF_LIGHT),
+       ("Lwt effects (io_uring)", 95500, FLAGSHIP),
+       ("Lwt effects (epoll)", 70400, EFF_LIGHT),
        ("Lwt classic (io_uring)", 92600, CLA_DARK),
        ("Lwt classic (epoll)", 71300, CLA_LIGHT)],
       lower_better=False)
@@ -144,10 +147,10 @@ chart(p("swap-cohttp.svg"),
       "cohttp-lwt-unix, unmodified, recompiled against each core",
       "50 conn x 200 req, GET /, new connection per request, in-process "
       "client", "requests / second",
-      [("Lwt effect core (io_uring, multishot + static resolver)", 8174, EFF_DARK),
-       ("Lwt effect core (io_uring, multishot)", 7486, EFF_DARK),
-       ("Lwt effect core (epoll)", 6557, EFF_LIGHT),
-       ("Lwt classic (io_uring, static resolver)", 7671, CLA_DARK),
+      [("Lwt effects (io_uring) + static resolver (client option)", 8174, EFF_DARK),
+       ("Lwt effects (io_uring)", 7486, FLAGSHIP),
+       ("Lwt effects (epoll)", 6557, EFF_LIGHT),
+       ("Lwt classic (io_uring) + static resolver (client option)", 7671, CLA_DARK),
        ("Lwt classic (io_uring)", 6964, CLA_DARK),
        ("Lwt classic (epoll)", 6105, CLA_LIGHT)],
       lower_better=False)
@@ -160,19 +163,19 @@ chart(p("swap-cohttp.svg"),
 chart(p("swap-http-saturation.svg"),
       "cohttp-lwt-unix under an external load generator - saturation",
       "GET /plaintext, wrk -t4 -c64 keep-alive, one core", "requests / second",
-      [("effect core (io_uring)", 43100, EFF_DARK),
-       ("effect core (libev)", 34999, EFF_LIGHT),
-       ("classic (io_uring)", 45018, CLA_DARK),
-       ("classic (libev)", 35482, CLA_LIGHT)],
+      [("Lwt effects (io_uring)", 43100, FLAGSHIP),
+       ("Lwt effects (libev)", 34999, EFF_LIGHT),
+       ("Lwt classic (io_uring)", 45018, CLA_DARK),
+       ("Lwt classic (libev)", 35482, CLA_LIGHT)],
       lower_better=False)
 
 chart(p("swap-http-p99.svg"),
       "cohttp-lwt-unix under an external load generator - tail latency",
       "GET / (2 KB), wrk2 at a fixed 20k req/s, p99 (median over rounds)", "ms",
-      [("effect core (io_uring)", 17.3, EFF_DARK),
-       ("effect core (libev)", 18.5, EFF_LIGHT),
-       ("classic (io_uring)", 13.1, CLA_DARK),
-       ("classic (libev)", 16.4, CLA_LIGHT)],
+      [("Lwt effects (io_uring)", 17.3, FLAGSHIP),
+       ("Lwt effects (libev)", 18.5, EFF_LIGHT),
+       ("Lwt classic (io_uring)", 13.1, CLA_DARK),
+       ("Lwt classic (libev)", 16.4, CLA_LIGHT)],
       lower_better=True)
 
 # httpun: one scheduler-agnostic protocol engine (the maintained httpaf
@@ -184,8 +187,8 @@ chart(p("swap-httpun-saturation.svg"),
       "GET /plaintext, wrk -t4 -c64 keep-alive, one core; handler shared "
       "verbatim between the Lwt and Eio servers", "requests / second",
       [("httpun-eio (gluten-eio adapter)", 34700, EIO),
-       ("httpun-lwt, effect core (io_uring)", 89100, EFF_DARK),
-       ("httpun-lwt, effect core (libev)", 67500, EFF_LIGHT),
-       ("httpun-lwt, classic (io_uring)", 99100, CLA_DARK),
-       ("httpun-lwt, classic (libev)", 68900, CLA_LIGHT)],
+       ("Lwt effects (io_uring)", 89100, FLAGSHIP),
+       ("Lwt effects (libev)", 67500, EFF_LIGHT),
+       ("Lwt classic (io_uring)", 99100, CLA_DARK),
+       ("Lwt classic (libev)", 68900, CLA_LIGHT)],
       lower_better=False)

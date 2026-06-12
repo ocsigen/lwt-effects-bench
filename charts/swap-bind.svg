@@ -5,8 +5,8 @@
 <text x="240" y="72" text-anchor="end">lab: breaking effect bind</text>
 <rect x="250" y="54" width="380" height="26" rx="3" fill="#78909c" opacity="0.72"/>
 <text x="638" y="72" fill="#202124">9.5</text>
-<text x="240" y="110" text-anchor="end" font-weight="700">Lwt effect core</text>
-<rect x="250" y="92" width="208" height="26" rx="3" fill="#a8c7fa"/>
+<text x="240" y="110" text-anchor="end" font-weight="700">Lwt effects</text>
+<rect x="250" y="92" width="208" height="26" rx="3" fill="#e6007e"/>
 <text x="466" y="110" fill="#202124" font-weight="700">5.2 ★</text>
 <text x="240" y="148" text-anchor="end">Lwt classic core</text>
 <rect x="250" y="130" width="440" height="26" rx="3" fill="#b2dfdb" opacity="0.72"/>
