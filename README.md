@@ -69,6 +69,15 @@ The answer is yes, in two independently useful layers:
   primitives (`perform`, stack switching, `continue`) at 0.00 % of samples.
   Monadic `bind` never suspends a fiber; effects structure the scheduler
   and enable the direct style, and you pay for them only when you use them.
+- **A control experiment settles the attribution** (section 9): removing
+  the effect layer from the rewritten core entirely, a ~50-line surgery
+  (branch `lwt-lean-core`), changes no benchmark result, monadic or
+  direct-style, and the whole test suite still passes. The speedups come
+  from the rewrite itself (lean promises, no proxy machinery, the run
+  queue, removable waiters); the fast direct style only needs the core's
+  run-queue hook. One practical consequence: the rewritten core, in its
+  lean form, no longer requires OCaml 5 by itself; only the opt-in
+  direct-style package (`Lwt_direct`) does.
 
 The earlier proof-of-concept report (separate `lwt_effects` package, two
 bind flavours) is preserved in
@@ -157,6 +166,7 @@ changes is which lwt is linked:
 |---|---|
 | `classic` | the [`lwt-uring` branch](https://github.com/ocsigen/lwt/tree/lwt-uring): historical core + the transparent io_uring engine |
 | `effects` | the [`lwt-effects-core` branch](https://github.com/ocsigen/lwt/tree/lwt-effects-core): effect-based core + the same engine |
+| `lean` | the [`lwt-lean-core` branch](https://github.com/ocsigen/lwt/tree/lwt-lean-core): the same rewritten core with the effect layer removed (the control experiment of section 9, added 2026-07) + the same engine |
 
 **Eio** (`eio_main` 1.3, io_uring via `eio_linux`) and **Miou** (0.6,
 `miou.unix`, which multiplexes with `ppoll` on this machine) are the
@@ -577,6 +587,72 @@ core stays Eio-free. A separate design analysis covers capabilities,
 cancellation, and the risks of mixing the two styles; the bench source is
 `test/eio/bench_pingpong.ml` on the branch.
 
+### 9. The control experiment: the same core without effects
+
+**What it measures**: which part of the rewritten core's performance is due
+to OCaml 5 effects, and which part to the rewrite itself (lean promises
+without proxy machinery, the array run queue, removable waiters). The
+`perf` profile already showed 0.00 % of time in effect primitives on
+monadic workloads; this experiment removes the effects altogether and
+re-measures everything.
+
+**How**: the effect layer of the swapped core turns out to be about 50
+lines: an `Await` effect performed once per event-loop run (by the
+scheduler's `run`, to await the main promise), the handler that parks and
+re-enqueues suspended continuations, and a `Resume` task variant in the run
+queue. The [`lwt-lean-core` branch](https://github.com/ocsigen/lwt/tree/lwt-lean-core)
+removes all of it (net diff: +38/−76 lines in `src/core/lwt.ml`): `run`
+becomes a plain drain loop over the queue and the idle hook, and the queue
+holds only closures. Everything else is identical. `Lwt_direct` is
+unchanged on top: it owns its effect handler and only needs the core's
+run-queue hook (`Lwt.Private.scheduler_enqueue`). The whole historical
+suite passes on the lean core as well (`test/core` 705, `test/unix` 233,
+ppx, react, direct, retry, uring). The three cores were then benchmarked in
+a single interleaved session (cool idle machine, one saved binary per core,
+runs alternated, same protocols as the rest of this README).
+
+| bench (same session, interleaved) | classic | effects | lean (no effects) |
+|---|---|---|---|
+| resolved bind (ns/op, words) | 10.9 / 25 | 5.5 / 9 | **4.9 / 9** |
+| suspended bind (ns/op, words) | 1392 / 88 | 1349 / 71 | 1345 / 71 |
+| pause storm (ns/yield, words) | 243–252 / 67 | 241–245 / 61 | 234–236 / 61 |
+| `Lwt_direct` (ns/yield, words) | 124–130 / 12 | 72–76 / 14 | **65–70 / 14** |
+| Eio, measured in the same windows | | 90–97 / 40 | |
+| echo, epoll (rt/s) | 63.3–68.7k | 64.5–68.7k | 67.2–69.2k |
+| echo, io_uring (rt/s) | 87.3–89.4k | 85.0–93.1k | 85.6–91.6k |
+| cohttp, epoll (median req/s) | 4 614 | 5 035 | 5 004 |
+| cohttp, io_uring (median req/s) | 5 235 | 6 045 | 5 963 |
+| cohttp, io_uring + static resolver (median) | 5 732 | 6 361 | 6 351 |
+| wrk2 saturation, io_uring (req/s) | 36.8k | 36.1k | 36.5k |
+| wrk2 saturation, libev (req/s) | 29.2k | 28.8k | 29.3k |
+| live set under sustained load (`/gc`) | flat | flat | flat |
+
+(Absolute figures differ from the June campaign, machine state differs
+across sessions; every comparison in this table was measured within one
+session, alternating the three binaries in the same windows.)
+
+**Reading it:**
+
+- **The lean core matches the effect core everywhere**, allocation
+  signatures included, and `Lwt_direct` keeps its speed (65–70 ns/yield,
+  still ahead of Eio measured in the same windows) on a core that contains
+  no effect machinery at all: the direct-style speed comes from riding the
+  core's run queue, not from the core being structured as an effect
+  handler.
+- **The gains of the swap are therefore attributable to the rewrite
+  alone**: lean promises without proxy machinery (the resolved-bind 2×),
+  the run queue (scheduling), removable waiters and the leaner allocation
+  profile (cohttp, GC pauses). This turns the `perf` observation (0.00 %
+  in effect primitives) into a proof by construction.
+- The small residual saturation gap vs classic under the external load
+  generator (−1 to −2 % in this session, up to −4 % in the June campaign)
+  is shared by effects and lean alike: it belongs to the rewrite's
+  promise/queue memory-access profile, not to effects either.
+- A practical consequence: the lean core uses no OCaml 5 machinery, so the
+  core swap by itself would not force an `ocaml >= 5` requirement
+  (relaxing the package constraints remains to be validated); only the
+  opt-in direct-style package (`Lwt_direct`) inherently requires effects.
+
 ## The optimisations, and what each bought
 
 | optimisation | layer | benefit |
@@ -659,20 +735,26 @@ the combination that produced every number in this README twice.
 ## Conclusions
 
 1. **You do not have to choose between the monad and performance.** With
-   the io_uring engine and the effect-based core, unchanged Lwt code is at
+   the io_uring engine and the rewritten core, unchanged Lwt code is at
    direct-style speed: tie with Eio on raw I/O, 2× on resolved bind,
    faster-than-Eio direct style available *inside* Lwt when wanted.
 2. **The engine and the core are independent wins.** io_uring alone gives
-   +27–44 % at saturation to existing applications. The effect core adds
-   the cheaper monad, the best GC-pause profile, and `Lwt_direct` — while
-   passing Lwt's entire historical test suite unchanged.
+   +27–44 % at saturation to existing applications. The rewritten core adds
+   the cheaper monad, the best GC-pause profile, and a fast `Lwt_direct` —
+   while passing Lwt's entire historical test suite unchanged.
 3. **Stack comparisons are not scheduler comparisons.** cohttp-eio beating
    cohttp-lwt says the *newer HTTP stack* is leaner; at constant protocol
    engine (httpun), Lwt is ~3× the Eio adapter. When evaluating runtimes,
    hold the stack constant — and when evaluating stacks, say so.
-4. **Effects are free until you use them.** The effect core spends zero
-   time in effect primitives on monadic workloads; they pay only where
-   they add value (the scheduler's structure, direct style).
+4. **The performance belongs to the rewrite, not to the effects.** The
+   effect core spends zero time in effect primitives on monadic workloads,
+   and the control experiment (section 9) proves the attribution by
+   construction: remove the effect layer from the core entirely and every
+   number stays, `Lwt_direct`'s speed included (it only needs the core's
+   run-queue hook). What effects buy is expressive, not quantitative:
+   direct-style code with native backtraces inside an unchanged Lwt
+   program. A corollary: the core swap by itself need not require OCaml 5;
+   only the direct-style package does.
 5. The monad keeps what it always had: suspension visible in the types —
    which reactive and multi-tier programming rely on — at no measurable
    cost against the direct-style alternative.
@@ -693,9 +775,11 @@ the combination that produced every number in this README twice.
 # Workspace benchmarks (scheduling, bind, pingpong, echo): the Lwt core is
 # the vendor/lwt symlink. Build one binary per core, SAVE both, then run
 # them alternating:
-ln -sfn /path/to/lwt-checkout-of-branch vendor/lwt   # lwt-uring | lwt-effects-core
+ln -sfn /path/to/lwt-checkout-of-branch vendor/lwt   # lwt-uring | lwt-effects-core | lwt-lean-core
 dune build --profile release scheduling/bench.exe ... && cp _build/.../bench.exe /tmp/...
 BENCH_CORE=classic ./saved-classic.exe ; BENCH_CORE=effects ./saved-effects.exe ; repeat
+# (dune clean between vendor flips, and md5sum the saved binaries: a stale
+# _build silently benches the same core twice)
 
 # cohttp: a separate project (cohttp/), built against the OPAM switch's lwt —
 # build under each pin (opam pin lwt "...#branch"), save both binaries,
