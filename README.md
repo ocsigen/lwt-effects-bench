@@ -618,14 +618,26 @@ runs alternated, same protocols as the rest of this README).
 | pause storm (ns/yield, words) | 243–252 / 67 | 241–245 / 61 | 234–236 / 61 |
 | `Lwt_direct` (ns/yield, words) | 124–130 / 12 | 72–76 / 14 | **65–70 / 14** |
 | Eio, measured in the same windows | | 90–97 / 40 | |
+| ping-pong bigarray 64 B, epoll (µs/rt) | 9.7 | 9.4 | 9.5 |
+| ping-pong bigarray 64 B, io_uring (µs/rt) | 7.0 | 7.1 | 7.0 |
+| ping-pong bigarray 256 KB, io_uring (µs/rt) | 77.4 | 76.6 | 76.2 |
 | echo, epoll (rt/s) | 63.3–68.7k | 64.5–68.7k | 67.2–69.2k |
 | echo, io_uring (rt/s) | 87.3–89.4k | 85.0–93.1k | 85.6–91.6k |
 | cohttp, epoll (median req/s) | 4 614 | 5 035 | 5 004 |
 | cohttp, io_uring (median req/s) | 5 235 | 6 045 | 5 963 |
 | cohttp, io_uring + static resolver (median) | 5 732 | 6 361 | 6 351 |
-| wrk2 saturation, io_uring (req/s) | 36.8k | 36.1k | 36.5k |
-| wrk2 saturation, libev (req/s) | 29.2k | 28.8k | 29.3k |
+| wrk2 saturation cohttp, io_uring (req/s) | 36.8k | 36.1k | 36.5k |
+| wrk2 saturation cohttp, libev (req/s) | 29.2k | 28.8k | 29.3k |
+| wrk2 saturation httpun, io_uring (median req/s) | 92.6k | 93.6k | 89.3k |
+| wrk2 saturation httpun, libev (median req/s) | 72.8k | 77.1k | 75.2k |
 | live set under sustained load (`/gc`) | flat | flat | flat |
+
+Fixed-rate latency was also swept for the trio (retro protocol, wrk2 at
+5k/10k/20k req/s, cohttp and httpun servers, both engines): the three cores
+sit in one overlapping band at every rate (single-digit ms p99 at 5k/10k,
+10–21 ms at 20k on cohttp, 2–10 ms on httpun), with no consistent ordering
+across rounds; the per-round swing of any one core exceeds the spread
+between cores.
 
 (Absolute figures differ from the June campaign, machine state differs
 across sessions; every comparison in this table was measured within one
