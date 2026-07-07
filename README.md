@@ -162,6 +162,13 @@ changes is which lwt is linked:
 `miou.unix`, which multiplexes with `ppoll` on this machine) are the
 external references.
 
+A further experiment sits on a *different axis*: **Lwt on Eio** (branch
+[`lwt-on-eio-poc`](https://github.com/ocsigen/lwt/tree/lwt-on-eio-poc)). It is
+not a different *core* but the classic core run on Eio's *runtime* (loop and
+io_uring ring) instead of Lwt's own engine. It answers a different question
+(reuse Eio vs the maison ring) and is a server-only, opt-in backend, so it is
+measured on its own in section 8.
+
 **Chart colour code**: the **bright magenta bar is the configuration this
 work ships** — the effect core on the io_uring engine, labeled
 **“Lwt effects (io_uring)”** in every chart (multishot accept included: it
@@ -508,6 +515,68 @@ What it shows:
   stable tail of the table** (p99 10.0–10.4 ms across rounds, while
   classic swung 8.4–22.5 ms).
 
+### 8. Lwt on Eio: reusing Eio's runtime instead of the maison ring
+
+A separate question (branch
+[`lwt-on-eio-poc`](https://github.com/ocsigen/lwt/tree/lwt-on-eio-poc)):
+instead of Lwt owning its io_uring engine, can Lwt run *on top of Eio's*
+runtime, so a program already built on Eio shares one event loop and one ring
+with its Lwt code, and the two ecosystems interoperate? This pushes the
+[`lwt_eio`](https://github.com/ocaml-multicore/lwt_eio) idea one step further.
+Two levels, both keeping Lwt's public API and semantics unchanged:
+
+- **Level A** = today's `lwt_eio`: an `Lwt_engine` whose readiness and timers
+  are driven by Eio. Lwt and Eio share the loop, but Lwt still issues its own
+  `Unix.read`/`write` (readiness model), so there is no io_uring benefit for
+  Lwt's I/O.
+- **Level B** (the new part): fill Lwt's `Lwt_unix.set_completion_io` seam (the
+  same one the maison io_uring backend uses) with Eio's completion ops
+  (`Eio_linux.Low_level`), so Lwt's own `read`/`write` ride Eio's shared ring.
+  Correctness is proven end to end (strace: the socket transfers are
+  `io_uring_enter`, zero readiness `read`/`write`); interop both directions and
+  an Eio `Domain_manager` offload driven from Lwt also pass.
+
+**What it costs.** Ping-pong payload sweep, all rows measured in one process on
+the same machine (bigarray = the `Lwt_io`/cohttp path; µs per round-trip, lower
+is better; single run, no flambda, indicative):
+
+| config | 1 B | 64 B | 1 KB | 16 KB | 256 KB |
+|---|---|---|---|---|---|
+| Lwt + libev | 10.9 | 10.8 | 11.2 | 14.3 | 103.5 |
+| Lwt on Eio, Level A (readiness) | 10.4 | 11.1 | 10.6 | 14.7 | 110.8 |
+| Lwt on Eio, Level B (completion, Eio ring) | 12.2 | 12.3 | 13.0 | 16.4 | **91.5** |
+| Eio native (io_uring) | **6.6** | **6.7** | **7.2** | **10.5** | 79.2 |
+
+For reference, Lwt on the **maison** io_uring ring (section 3) is ~7 µs at
+these small sizes; the internal `test/uring` bench on this machine reads libev
+10.1, maison io_uring via `Lwt_unix` 8.4, explicit 7.9 µs at 64 B.
+
+**Reading it, honestly:**
+
+- **Level A tracks libev** at every size: sharing Eio's loop buys interop, not
+  I/O speed (as expected, it is still the readiness model).
+- **Level B is slower than both libev and the maison ring at small payloads**
+  (12 vs 10.1 vs 8.4 µs at 64 B). The reason is structural: Eio's public
+  completion API (`Low_level.readv`, ...) is *direct-style* (it suspends the
+  caller), so bridging it into Lwt's *callback-style* `completion_io` requires
+  forking one Eio fiber per I/O. The maison backend, using the `uring` library's
+  callback API directly, has no such per-op fork. (Caching the Eio `Fd` wrapper
+  per descriptor, versus wrapping it per op which was even worse, recovered a
+  few µs; the fiber fork is the residual, inherent cost.)
+- Level B only wins where the transfer dominates and is copy-free: bigarray at
+  256 KB, 91.5 µs, below libev (103.5) and approaching Eio native (79.2). The
+  bytes path is the opposite (a copy per call, plus per-op forks across the
+  partial-transfer loop): 458 µs at 256 KB.
+
+**Takeaway.** Routing Lwt's I/O through Eio's ring is *not* a performance win
+over Lwt's own io_uring: the maison ring is faster and simpler. The value of
+"Lwt on Eio" is **interoperability** (one loop, one ring, bidirectional calls,
+Eio domains alongside Lwt), for code that already lives in an Eio process. It
+must stay an opt-in, server-only backend: Eio has no browser backend, so Lwt's
+core stays Eio-free. A separate design analysis covers capabilities,
+cancellation, and the risks of mixing the two styles; the bench source is
+`test/eio/bench_pingpong.ml` on the branch.
+
 ## The optimisations, and what each bought
 
 | optimisation | layer | benefit |
@@ -607,6 +676,13 @@ the combination that produced every number in this README twice.
 5. The monad keeps what it always had: suspension visible in the types —
    which reactive and multi-tier programming rely on — at no measurable
    cost against the direct-style alternative.
+6. **Reusing Eio's runtime is for interop, not speed.** Running Lwt on Eio's
+   loop and ring (branch `lwt-on-eio-poc`, section 8) keeps Lwt's API and
+   semantics and interoperates cleanly with Eio, but bridging Lwt's
+   callback-style I/O onto Eio's direct-style completion API costs a fiber fork
+   per op, so it is slower than Lwt's own io_uring ring at small payloads. The
+   maison ring stays the performance route; "Lwt on Eio" is the interop route,
+   opt-in and server-only (Eio has no browser backend).
 
 ## Reproducing
 
