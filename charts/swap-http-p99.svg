@@ -1,23 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="760" height="286" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
 <rect width="760" height="286" fill="white"/>
 <text x="16" y="24" font-size="16" font-weight="700">cohttp-lwt-unix under an external load generator - tail latency</text>
-<text x="16" y="42" fill="#5f6368">GET / (2 KB), wrk2 at a fixed 20k req/s, p99 (median of 6 rounds; 30-70 ms spikes hit every core in some rounds) — lower is better ↓ (ms)</text>
-<text x="240" y="72" text-anchor="end" font-weight="700">Lwt lean (io_uring)</text>
-<rect x="250" y="54" width="338" height="26" rx="3" fill="#e6007e"/>
-<text x="596" y="72" fill="#202124" font-weight="700">18.3 ★</text>
+<text x="16" y="42" fill="#5f6368">GET / (2 KB), wrk2 at a fixed 20k req/s, p99 (median of 8 rounds; 30-70 ms spikes hit every core in some rounds) — lower is better ↓ (ms)</text>
+<text x="240" y="72" text-anchor="end">Lwt lean (io_uring)</text>
+<rect x="250" y="54" width="394" height="26" rx="3" fill="#e6007e"/>
+<text x="652" y="72" fill="#202124">18.8</text>
 <text x="240" y="110" text-anchor="end">Lwt lean (epoll)</text>
-<rect x="250" y="92" width="375" height="26" rx="3" fill="#f3a6ce"/>
-<text x="633" y="110" fill="#202124">20.3</text>
-<text x="240" y="148" text-anchor="end">Lwt effects (io_uring)</text>
-<rect x="250" y="130" width="348" height="26" rx="3" fill="#1a73e8"/>
-<text x="606" y="148" fill="#202124">18.8</text>
+<rect x="250" y="92" width="425" height="26" rx="3" fill="#f3a6ce"/>
+<text x="683" y="110" fill="#202124">20.3</text>
+<text x="240" y="148" text-anchor="end" font-weight="700">Lwt effects (io_uring)</text>
+<rect x="250" y="130" width="390" height="26" rx="3" fill="#1a73e8"/>
+<text x="648" y="148" fill="#202124" font-weight="700">18.6 ★</text>
 <text x="240" y="186" text-anchor="end">Lwt effects (epoll)</text>
-<rect x="250" y="168" width="388" height="26" rx="3" fill="#a8c7fa"/>
-<text x="646" y="186" fill="#202124">21.0</text>
+<rect x="250" y="168" width="440" height="26" rx="3" fill="#a8c7fa"/>
+<text x="698" y="186" fill="#202124">21.0</text>
 <text x="240" y="224" text-anchor="end">Lwt classic (io_uring)</text>
-<rect x="250" y="206" width="440" height="26" rx="3" fill="#00796b"/>
-<text x="698" y="224" fill="#202124">23.8</text>
+<rect x="250" y="206" width="392" height="26" rx="3" fill="#00796b"/>
+<text x="650" y="224" fill="#202124">18.7</text>
 <text x="240" y="262" text-anchor="end">Lwt classic (epoll)</text>
-<rect x="250" y="244" width="351" height="26" rx="3" fill="#b2dfdb"/>
-<text x="609" y="262" fill="#202124">19.0</text>
+<rect x="250" y="244" width="415" height="26" rx="3" fill="#b2dfdb"/>
+<text x="673" y="262" fill="#202124">19.8</text>
 </svg>

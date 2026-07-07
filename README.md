@@ -47,16 +47,16 @@ The answer is yes, in two independently useful layers:
 **Headline results** (details and methodology below):
 
 - **io_uring is the big I/O win**: on real HTTP serving, switching the
-  engine under unchanged code raises saturation throughput by **+27 %**
-  (cohttp) to **+44 %** (httpun), and cuts small-message round-trip latency
-  from 9.9 to 7.4 µs.
+  engine under unchanged code raises saturation throughput by **+22–27 %**
+  (cohttp) to **+27–44 %** (httpun) depending on the session, and cuts
+  small-message round-trip latency from 9.6 to 7.0 µs.
 - **The rewritten core makes the monad itself cheaper**: an already-resolved
   `bind` — the hot path of monadic code — costs **~5 ns instead of ~11
   (~2×), with a third of the allocation**; cooperative scheduling is at
   parity to a few percent faster; an unmodified cohttp server gains
-  **+7–15 %** depending on the session; and the rewritten core has the
-  **best GC-pause profile** of everything measured (max 1.0 ms under full
-  load, vs 1.7 ms for the classic core).
+  **+7–15 %** depending on the session; and GC pauses stay **below 1.5 ms
+  max under full load on every core** (the June session measured the
+  rewritten core ahead, 1.0 vs 1.7 ms; the July one, parity).
 - **Against Eio, scheduler for scheduler, unchanged Lwt code on io_uring is
   at Eio level**: a statistical tie on the echo and ping-pong I/O
   benchmarks, and the opt-in direct style (`Lwt_direct`, on the rewritten
@@ -377,9 +377,10 @@ samples in the same windows.)
 | Lwt (lean core, epoll) | 67.2k – 69.2k |
 | Lwt (effect core, epoll) | 64.5k – 68.7k |
 | Lwt (classic core, epoll) | 63.3k – 68.7k |
-| Miou (ppoll, June) | 20.8k – 22.1k |
+| Miou (ppoll) | 21.1k – 21.3k |
 
-(Trio re-measured 2026-07, 3 interleaved rounds, Eio in the same windows.)
+(Trio re-measured 2026-07, 3 interleaved rounds, Eio and Miou in the same
+windows; one Miou dip to 17.3k in a later round left out of the range.)
 
 **The four io_uring rows are a statistical tie** — unchanged Lwt code on
 the transparent engine is at Eio level, on all three cores. epoll →
@@ -492,49 +493,41 @@ recent Eio-native stack; an h1-based stack on Miou): they bound the design
 space but do not compare schedulers — §7 does that properly, holding the
 HTTP engine constant.
 
-June campaign table (the reference stacks were measured in these windows):
-
 | config | saturation (req/s, /plaintext) | p99 @5k | p99 @10k | p99 @20k |
 |---|---|---|---|---|
-| cohttp-eio | **68–82k** | **4.0 ms** | **4.6 ms** | 8.5 ms |
-| cohttp-lwt, classic (io_uring) | 45.0k | 5.9 ms | 10.6 ms | 13.1 ms |
-| cohttp-lwt, effect core (io_uring) | 43.1k (−4.3 %) | 5.5 ms | 11.6 ms | 17.3 ms |
-| cohttp-lwt, classic (epoll) | 35.5k | 4.9 ms | 9.5 ms | 16.4 ms |
-| cohttp-lwt, effect core (epoll) | 35.0k (−1.4 %) | 6.2 ms | 11.4 ms | 18.5 ms |
-| httpcats (Miou, 1 domain) | 32.6k | 8.1 ms | 7.8 ms | **5.2 ms** |
+| cohttp-eio | **87.5–88.8k** | **2.5 ms** | 3.8 ms | **5.5–6.2 ms** |
+| cohttp-lwt, classic (io_uring) | 43.8–44.1k | 3.3 ms | 3.9 ms | 18.7 ms |
+| cohttp-lwt, effect core (io_uring) | 42.8–43.2k (−2.2 %) | 3.0 ms | **3.0 ms** | 18.6 ms |
+| cohttp-lwt, lean core (io_uring) | 42.0–43.1k (−3.2 %) | 3.1 ms | 5.5 ms | 18.8 ms |
+| cohttp-lwt, classic (epoll) | 35.6–36.5k | 3.4 ms | 10.3 ms | 19.8 ms |
+| cohttp-lwt, effect core (epoll) | 34.9–35.2k (−2.9 %) | 3.5 ms | 8.5 ms | 21.0 ms |
+| cohttp-lwt, lean core (epoll) | 32.9–35.0k (−5.8 %) | 3.1 ms | 10.2 ms | 20.3 ms |
+| httpcats (Miou, 1 domain) | 31.6–32.7k | 5.3 ms | 8.9 ms | 2.9–7.4 ms |
 
-2026-07 trio session (same protocol, the three Lwt cores interleaved;
-absolute figures lower than June across the board, machine state):
-
-| config | saturation (req/s, /plaintext) | p99 @5k | p99 @10k | p99 @20k |
-|---|---|---|---|---|
-| cohttp-lwt, classic (io_uring) | 36.8k | 3.1 ms | 8.3 ms | 23.8 ms |
-| cohttp-lwt, effect core (io_uring) | 36.1k (−1.9 %) | 2.8 ms | 8.2 ms | 18.8 ms |
-| cohttp-lwt, lean core (io_uring) | 36.5k (−0.8 %) | 3.0 ms | 7.1 ms | **18.3 ms** |
-| cohttp-lwt, classic (epoll) | 29.2k | 4.9 ms | 9.7 ms | 19.0 ms |
-| cohttp-lwt, effect core (epoll) | 28.8k (−1.2 %) | 3.0 ms | 10.7 ms | 21.0 ms |
-| cohttp-lwt, lean core (epoll) | 29.3k (+0.5 %) | 4.5 ms | 11.2 ms | 20.3 ms |
-
-(p99 columns: one round at 5k, median of 3 at 10k, median of 6 at 20k;
-at 20k, 30–70 ms spikes hit *every* core in some rounds — the medians sit
-in one band and the per-round swing of a single core exceeds the spread
-between cores.)
+(One 2026-07 evening window, all eight servers interleaved: two saturation
+rounds, one round at 5k/10k. The 20k column is the **median of 8 rounds**
+spread across the evening's windows — at that rate 30–70 ms spikes hit
+*every* core in some rounds, so single rounds mislead; the medians sit in
+one band and the per-round swing of a single core exceeds the spread
+between cores. The June campaign measured the same shape at higher
+absolutes: classic io_uring 45.0k, +27 % over epoll, cores at parity.)
 
 Findings:
 
-1. The transparent io_uring engine is worth **+26–27 %** to Lwt at
-   saturation in both sessions (35.5k → 45.0k in June, 29.2k → 36.8k in
-   July) — its largest win on this stack, on unchanged code.
-2. The three Lwt cores are at **latency parity at every rate** (the
-   per-round swing of any single core exceeds the spread between cores; the
-   dedicated June interleaved A/B at 20k gave median p99 16.99 ms effect vs
-   17.05 ms classic) and within a few percent at saturation. The rewritten
-   cores' small saturation deficit (−1 to −2 % in July, up to −4 % in June)
-   is shared by the effect and the lean cores alike: it belongs to the
-   rewrite's memory-access profile, not to effects (section 9).
-3. Under `olly`, the effect core has the **best GC-pause profile** measured
-   here: max 1.0 ms under full load (classic: 1.7 ms, June); at the July
-   session's load both rewritten cores and classic all stayed sub-ms.
+1. The transparent io_uring engine is worth **+22–27 %** to Lwt at
+   saturation depending on the session (35.6–36.5k → 43.8–44.1k here) —
+   its largest win on this stack, on unchanged code.
+2. The three Lwt cores are at **latency parity at every rate** (20k
+   medians 18.6–18.8 ms on io_uring; the dedicated June interleaved A/B
+   gave 16.99 ms effect vs 17.05 ms classic) and within a few percent at
+   saturation. The rewritten cores' small saturation deficit (−2 to −3 %
+   on io_uring here, −1 to −4 % across sessions) is shared by the effect
+   and the lean cores alike: it belongs to the rewrite's memory-access
+   profile, not to effects (section 9).
+3. Under `olly` at full saturation, GC pauses stay **below 1.5 ms max on
+   every core** (this session: classic 1.34 ms, lean 1.43 ms; the June
+   session had measured the rewritten core ahead, 1.0 vs 1.7 ms — call it
+   parity with excellent pauses all around).
 4. httpcats/Miou has the most *stable* latency of the table at modest
    throughput — consistent with its bench report's fairness claims;
    cohttp-eio dominates this table on both axes. **Read that dominance for
@@ -563,30 +556,31 @@ to the connection-per-request cohttp tables.
 
 | config | saturation (req/s) | p99 @20k req/s |
 |---|---|---|
-| httpun-lwt, classic (io_uring) | 92.6k – 99.9k | 5.9 – 6.7 ms |
-| httpun-lwt, effect core (io_uring) | 91.4k – **100.9k** | 2.4 – 7.7 ms |
-| httpun-lwt, lean core (io_uring) | 82.6k – 96.6k | 6.9 – 7.5 ms |
+| httpun-lwt, classic (io_uring) | 91.8k – **101.3k** | 6.6 – 7.7 ms |
+| httpun-lwt, effect core (io_uring) | 92.2k – 93.0k | 7.8 – 8.9 ms |
+| httpun-lwt, lean core (io_uring) | 85.6k – 90.6k | 6.9 – 7.9 ms |
 | httpun-lwt, classic (epoll) | 72.1k – 80.1k | 3.7 – 8.4 ms |
 | httpun-lwt, effect core (epoll) | 75.4k – 77.1k | 4.4 – 8.8 ms |
 | httpun-lwt, lean core (epoll) | 68.5k – 75.9k | 8.9 – 9.5 ms |
-| httpun-eio (gluten-eio, June) | 34.5k – 34.8k | 15.6 – 18.8 ms |
+| httpun-eio (gluten-eio) | 35.6k | 14.2 – 21.4 ms |
 
-(Lwt trio re-measured 2026-07, 3 interleaved saturation rounds and 2
-latency rounds per engine; the httpun-eio row is the June measurement. The
-June session's Lwt figures, e.g. classic 98.0–100.2k at saturation, are in
-the same band.)
+(2026-07, two windows of the same evening: the io_uring rows and
+httpun-eio interleaved in one window, the epoll rows in an earlier one
+whose io_uring anchors matched. The June session's figures, e.g. classic
+98.0–100.2k at saturation and httpun-eio 34.5–34.8k, are in the same
+bands.)
 
 What it shows:
 
 - **Swap the stack and the picture inverts: unchanged Lwt code at ~100k
-  req/s is ~3× httpun-eio and ~2.2× the cohttp-lwt stack** at saturation,
-  same machine, same protocol. The cohttp table's "Eio dominance" is the
-  *stack*, definitively.
-- A fairness caveat in the other direction: httpun-eio's 34.7k says less
+  req/s is ~2.7× httpun-eio and ~2.2× the cohttp-lwt stack** at
+  saturation, same machine, same protocol. The cohttp table's "Eio
+  dominance" is the *stack*, definitively.
+- A fairness caveat in the other direction: httpun-eio's 35.6k says less
   about the Eio *scheduler* than about the off-the-shelf **gluten-eio
-  adapter** (cohttp-eio reaches 75k on this very protocol). Adapter quality
-  is a real variable even at constant engine — and the mature, hand-tuned
-  adapter is the Lwt one.
+  adapter** (cohttp-eio reaches ~88k on this very protocol). Adapter
+  quality is a real variable even at constant engine — and the mature,
+  hand-tuned adapter is the Lwt one.
 - io_uring again: **+27–44 %** over epoll on this lean stack depending on
   the session (the leaner the stack, the more the engine shows).
 - The three Lwt cores are a **statistical tie on both engines**: each core
