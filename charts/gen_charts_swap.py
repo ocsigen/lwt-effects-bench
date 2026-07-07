@@ -88,8 +88,8 @@ MIOU       = "#8430ce"   # Miou
 # Data: the 2026-07 trio session (classic / effects / lean interleaved in
 # the same windows, cool idle machine), matching the README tables: mins for
 # the pinned micro-benches and ping-pong, medians over rounds for cohttp and
-# the wrk2 suite. Rows not re-measured in that session keep their June value
-# and say "(June)" in their label (lab, Miou echo, httpun-eio).
+# the wrk2 suite. Only the lab rows (semantics-breaking experiments) keep
+# their June value and say "(June)" in their label.
 #
 # UNIFORM ROW ORDER, bottom -> top: Lwt classic epoll, Lwt classic io_uring,
 # Lwt effects epoll, Lwt effects io_uring, Lwt lean epoll, Lwt lean io_uring
