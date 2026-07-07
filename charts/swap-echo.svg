@@ -1,26 +1,32 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="324" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
-<rect width="760" height="324" fill="white"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="400" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
+<rect width="760" height="400" fill="white"/>
 <text x="16" y="24" font-size="16" font-weight="700">Echo TCP - 100 concurrent connections</text>
-<text x="16" y="42" fill="#5f6368">100 conn x 1000 msgs x 64 B; the three io_uring rows are a statistical tie — higher is better ↑ (round-trips / second)</text>
-<text x="240" y="72" text-anchor="end">Miou (ppoll)</text>
+<text x="16" y="42" fill="#5f6368">100 conn x 1000 msgs x 64 B; the io_uring rows and Eio are a statistical tie — higher is better ↑ (round-trips / second)</text>
+<text x="240" y="72" text-anchor="end">Miou (ppoll, June)</text>
 <rect x="250" y="54" width="88" height="26" rx="3" fill="#8430ce"/>
 <text x="346" y="72" fill="#202124">21,500</text>
 <text x="240" y="110" text-anchor="end">Eio (io_uring)</text>
-<rect x="250" y="92" width="395" height="26" rx="3" fill="#e8710a"/>
-<text x="653" y="110" fill="#202124">97,100</text>
-<text x="240" y="148" text-anchor="end" font-weight="700">lab: breaking direct + own ring</text>
+<rect x="250" y="92" width="372" height="26" rx="3" fill="#e8710a"/>
+<text x="630" y="110" fill="#202124">91,300</text>
+<text x="240" y="148" text-anchor="end" font-weight="700">lab: breaking direct + own ring (June)</text>
 <rect x="250" y="130" width="440" height="26" rx="3" fill="#78909c"/>
 <text x="698" y="148" fill="#202124" font-weight="700">108,037 ★</text>
-<text x="240" y="186" text-anchor="end">Lwt effects (io_uring)</text>
-<rect x="250" y="168" width="389" height="26" rx="3" fill="#e6007e"/>
-<text x="647" y="186" fill="#202124">95,500</text>
-<text x="240" y="224" text-anchor="end">Lwt effects (epoll)</text>
-<rect x="250" y="206" width="287" height="26" rx="3" fill="#a8c7fa"/>
-<text x="545" y="224" fill="#202124">70,400</text>
-<text x="240" y="262" text-anchor="end">Lwt classic (io_uring)</text>
-<rect x="250" y="244" width="377" height="26" rx="3" fill="#00796b"/>
-<text x="635" y="262" fill="#202124">92,600</text>
-<text x="240" y="300" text-anchor="end">Lwt classic (epoll)</text>
-<rect x="250" y="282" width="290" height="26" rx="3" fill="#b2dfdb"/>
-<text x="548" y="300" fill="#202124">71,300</text>
+<text x="240" y="186" text-anchor="end">Lwt lean (io_uring)</text>
+<rect x="250" y="168" width="361" height="26" rx="3" fill="#e6007e"/>
+<text x="619" y="186" fill="#202124">88,600</text>
+<text x="240" y="224" text-anchor="end">Lwt lean (epoll)</text>
+<rect x="250" y="206" width="278" height="26" rx="3" fill="#f3a6ce"/>
+<text x="536" y="224" fill="#202124">68,200</text>
+<text x="240" y="262" text-anchor="end">Lwt effects (io_uring)</text>
+<rect x="250" y="244" width="363" height="26" rx="3" fill="#1a73e8"/>
+<text x="621" y="262" fill="#202124">89,100</text>
+<text x="240" y="300" text-anchor="end">Lwt effects (epoll)</text>
+<rect x="250" y="282" width="271" height="26" rx="3" fill="#a8c7fa"/>
+<text x="529" y="300" fill="#202124">66,600</text>
+<text x="240" y="338" text-anchor="end">Lwt classic (io_uring)</text>
+<rect x="250" y="320" width="360" height="26" rx="3" fill="#00796b"/>
+<text x="618" y="338" fill="#202124">88,400</text>
+<text x="240" y="376" text-anchor="end">Lwt classic (epoll)</text>
+<rect x="250" y="358" width="269" height="26" rx="3" fill="#b2dfdb"/>
+<text x="527" y="376" fill="#202124">66,000</text>
 </svg>

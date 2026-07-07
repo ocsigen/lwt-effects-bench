@@ -1,23 +1,32 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="286" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
-<rect width="760" height="286" fill="white"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="400" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
+<rect width="760" height="400" fill="white"/>
 <text x="16" y="24" font-size="16" font-weight="700">cohttp-lwt-unix, unmodified, recompiled against each core</text>
-<text x="16" y="42" fill="#5f6368">50 conn x 200 req, GET /, new connection per request, in-process client — higher is better ↑ (requests / second)</text>
-<text x="240" y="72" text-anchor="end" font-weight="700">Lwt effects (io_uring) + static resolver (client option)</text>
-<rect x="250" y="54" width="440" height="26" rx="3" fill="#1a73e8"/>
-<text x="698" y="72" fill="#202124" font-weight="700">8,174 ★</text>
-<text x="240" y="110" text-anchor="end">Lwt effects (io_uring)</text>
-<rect x="250" y="92" width="403" height="26" rx="3" fill="#e6007e"/>
-<text x="661" y="110" fill="#202124">7,486</text>
-<text x="240" y="148" text-anchor="end">Lwt effects (epoll)</text>
-<rect x="250" y="130" width="353" height="26" rx="3" fill="#a8c7fa"/>
-<text x="611" y="148" fill="#202124">6,557</text>
-<text x="240" y="186" text-anchor="end">Lwt classic (io_uring) + static resolver (client option)</text>
-<rect x="250" y="168" width="413" height="26" rx="3" fill="#00796b"/>
-<text x="671" y="186" fill="#202124">7,671</text>
-<text x="240" y="224" text-anchor="end">Lwt classic (io_uring)</text>
-<rect x="250" y="206" width="375" height="26" rx="3" fill="#00796b"/>
-<text x="633" y="224" fill="#202124">6,964</text>
-<text x="240" y="262" text-anchor="end">Lwt classic (epoll)</text>
-<rect x="250" y="244" width="329" height="26" rx="3" fill="#b2dfdb"/>
-<text x="587" y="262" fill="#202124">6,105</text>
+<text x="16" y="42" fill="#5f6368">50 conn x 200 req, GET /, new connection per request, in-process client; medians of 3 rounds — higher is better ↑ (requests / second)</text>
+<text x="240" y="72" text-anchor="end">Lwt lean (io_uring) + static resolver (client option)</text>
+<rect x="250" y="54" width="439" height="26" rx="3" fill="#b0005e"/>
+<text x="697" y="72" fill="#202124">6,351</text>
+<text x="240" y="110" text-anchor="end">Lwt lean (io_uring)</text>
+<rect x="250" y="92" width="412" height="26" rx="3" fill="#e6007e"/>
+<text x="670" y="110" fill="#202124">5,963</text>
+<text x="240" y="148" text-anchor="end">Lwt lean (epoll)</text>
+<rect x="250" y="130" width="346" height="26" rx="3" fill="#f3a6ce"/>
+<text x="604" y="148" fill="#202124">5,004</text>
+<text x="240" y="186" text-anchor="end" font-weight="700">Lwt effects (io_uring) + static resolver (client option)</text>
+<rect x="250" y="168" width="440" height="26" rx="3" fill="#1a73e8"/>
+<text x="698" y="186" fill="#202124" font-weight="700">6,361 ★</text>
+<text x="240" y="224" text-anchor="end">Lwt effects (io_uring)</text>
+<rect x="250" y="206" width="418" height="26" rx="3" fill="#1a73e8"/>
+<text x="676" y="224" fill="#202124">6,045</text>
+<text x="240" y="262" text-anchor="end">Lwt effects (epoll)</text>
+<rect x="250" y="244" width="348" height="26" rx="3" fill="#a8c7fa"/>
+<text x="606" y="262" fill="#202124">5,035</text>
+<text x="240" y="300" text-anchor="end">Lwt classic (io_uring) + static resolver (client option)</text>
+<rect x="250" y="282" width="396" height="26" rx="3" fill="#00796b"/>
+<text x="654" y="300" fill="#202124">5,732</text>
+<text x="240" y="338" text-anchor="end">Lwt classic (io_uring)</text>
+<rect x="250" y="320" width="362" height="26" rx="3" fill="#00796b"/>
+<text x="620" y="338" fill="#202124">5,235</text>
+<text x="240" y="376" text-anchor="end">Lwt classic (epoll)</text>
+<rect x="250" y="358" width="319" height="26" rx="3" fill="#b2dfdb"/>
+<text x="577" y="376" fill="#202124">4,614</text>
 </svg>

@@ -185,19 +185,18 @@ io_uring ring) instead of Lwt's own engine. It answers a different question
 measured on its own in section 8.
 
 **Chart colour code**: the **bright magenta bar is the configuration this
-work ships** — the effect core on the io_uring engine, labeled
-**“Lwt effects (io_uring)”** in every chart (multishot accept included: it
-is part of the engine, not an option). The other colours are families:
-light blue = the effect core on epoll/libev, mid blue = the shipped
-configuration plus an *optional client-side configuration* (e.g. the static
-resolver), blue-green = classic core (dark: io_uring, light: epoll), dark
+work ships** — the lean core on the io_uring engine, labeled
+**“Lwt lean (io_uring)”** in every chart (multishot accept included: it
+is part of the engine, not an option); light pink = the lean core on
+epoll/libev, dark magenta = the shipped configuration plus an *optional
+client-side configuration* (e.g. the static resolver). The other colours
+are families: blue = the effect core (dark: io_uring, light: epoll),
+blue-green = classic core (dark: io_uring, light: epoll), dark
 blue-grey = lab — one colour, but note that each lab row is a *different*
 semantics-breaking experiment (suspending bind, direct yield on the bare
 scheduler, direct style on a private ring), named in its label; orange =
-Eio (io_uring), purple = Miou (ppoll). All Lwt
-rows in all charts were measured with the final shipped code. (The `lean`
-core, added 2026-07, appears in the tables only for now; the SVG charts
-still show the June campaign and will gain its bars when regenerated.)
+Eio (io_uring), purple = Miou (ppoll). The charts draw the 2026-07 trio
+session; rows kept from June say "(June)" in their label.
 
 ## The benchmarks, why they are relevant, and the results
 
@@ -408,7 +407,7 @@ by construction. A second pass installs the io_uring engine
 (2026-07 trio session) — this benchmark has the largest run-to-run variance
 of the suite.
 
-Reading the rows: the magenta **“Lwt effects (io_uring)”** bar is the
+Reading the rows: the magenta **“Lwt lean (io_uring)”** bar is the
 shipped configuration, out of the box — multishot accept is built into its
 engine, not something to enable. The **“+ static resolver”** rows are *not
 a different lwt*: a one-line client configuration (`~ctx`) that avoids a
@@ -509,12 +508,17 @@ absolute figures lower than June across the board, machine state):
 
 | config | saturation (req/s, /plaintext) | p99 @5k | p99 @10k | p99 @20k |
 |---|---|---|---|---|
-| cohttp-lwt, classic (io_uring) | 36.8k | 3.1 ms | 8.3–8.5 ms | 10.1–15.1 ms |
-| cohttp-lwt, effect core (io_uring) | 36.1k (−1.9 %) | 2.8 ms | 8.2–8.9 ms | 16.1–18.5 ms |
-| cohttp-lwt, lean core (io_uring) | 36.5k (−0.8 %) | 3.0 ms | 7.0–8.5 ms | 16.4–18.4 ms |
-| cohttp-lwt, classic (epoll) | 29.2k | 4.9 ms | 9.7–10.1 ms | 10.0–20.4 ms |
-| cohttp-lwt, effect core (epoll) | 28.8k (−1.2 %) | 3.0 ms | 10.4–11.1 ms | 19.9–21.3 ms |
-| cohttp-lwt, lean core (epoll) | 29.3k (+0.5 %) | 4.5 ms | 10.4–11.2 ms | 19.7–20.7 ms |
+| cohttp-lwt, classic (io_uring) | 36.8k | 3.1 ms | 8.3 ms | 23.8 ms |
+| cohttp-lwt, effect core (io_uring) | 36.1k (−1.9 %) | 2.8 ms | 8.2 ms | 18.8 ms |
+| cohttp-lwt, lean core (io_uring) | 36.5k (−0.8 %) | 3.0 ms | 7.1 ms | **18.3 ms** |
+| cohttp-lwt, classic (epoll) | 29.2k | 4.9 ms | 9.7 ms | 19.0 ms |
+| cohttp-lwt, effect core (epoll) | 28.8k (−1.2 %) | 3.0 ms | 10.7 ms | 21.0 ms |
+| cohttp-lwt, lean core (epoll) | 29.3k (+0.5 %) | 4.5 ms | 11.2 ms | 20.3 ms |
+
+(p99 columns: one round at 5k, median of 3 at 10k, median of 6 at 20k;
+at 20k, 30–70 ms spikes hit *every* core in some rounds — the medians sit
+in one band and the per-round swing of a single core exceeds the spread
+between cores.)
 
 Findings:
 
