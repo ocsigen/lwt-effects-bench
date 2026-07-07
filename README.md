@@ -733,9 +733,12 @@ session, alternating the three binaries in the same windows.)
   is shared by effects and lean alike: it belongs to the rewrite's
   promise/queue memory-access profile, not to effects either.
 - A practical consequence: the lean core uses no OCaml 5 machinery, so the
-  core swap by itself would not force an `ocaml >= 5` requirement
-  (relaxing the package constraints remains to be validated); only the
-  opt-in direct-style package (`Lwt_direct`) inherently requires effects.
+  core swap by itself does not force an `ocaml >= 5` requirement —
+  validated: the `lwt` package constraint is relaxed to `>= 4.14` on the
+  branch, and the whole suite (core 705, unix 233, ppx, react, retry)
+  passes on a fresh OCaml 4.14.2 switch with no code change. Only the
+  opt-in direct-style package (`Lwt_direct`) inherently requires effects
+  (OCaml >= 5.3).
 
 ## The optimisations, and what each bought
 
@@ -837,8 +840,8 @@ the combination that produced every number in this README twice.
    number stays, `Lwt_direct`'s speed included (it only needs the core's
    run-queue hook). What effects buy is expressive, not quantitative:
    direct-style code with native backtraces inside an unchanged Lwt
-   program. A corollary: the core swap by itself need not require OCaml 5;
-   only the direct-style package does.
+   program. A corollary, validated on a 4.14.2 switch: the core swap does
+   not require OCaml 5; only the direct-style package does.
 5. The monad keeps what it always had: suspension visible in the types —
    which reactive and multi-tier programming rely on — at no measurable
    cost against the direct-style alternative.
