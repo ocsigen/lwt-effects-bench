@@ -50,17 +50,18 @@ The answer is yes, in two independently useful layers:
   engine under unchanged code raises saturation throughput by **+27 %**
   (cohttp) to **+44 %** (httpun), and cuts small-message round-trip latency
   from 9.9 to 7.4 µs.
-- **The effect core makes the monad itself cheaper**: an already-resolved
-  `bind` — the hot path of monadic code — costs **5.2 ns instead of 11
+- **The rewritten core makes the monad itself cheaper**: an already-resolved
+  `bind` — the hot path of monadic code — costs **~5 ns instead of ~11
   (~2×), with a third of the allocation**; cooperative scheduling is at
-  parity to ~8 % faster; an unmodified cohttp server gains **+7 %**; and the
-  effect core has the **best GC-pause profile** of everything measured
-  (max 1.0 ms under full load, vs 1.7 ms for the classic core).
+  parity to a few percent faster; an unmodified cohttp server gains
+  **+7–15 %** depending on the session; and the rewritten core has the
+  **best GC-pause profile** of everything measured (max 1.0 ms under full
+  load, vs 1.7 ms for the classic core).
 - **Against Eio, scheduler for scheduler, unchanged Lwt code on io_uring is
   at Eio level**: a statistical tie on the echo and ping-pong I/O
-  benchmarks, and the opt-in direct style (`Lwt_direct`, on the effect
+  benchmarks, and the opt-in direct style (`Lwt_direct`, on the rewritten
   core's own run queue) is **faster than Eio at pure scheduling**
-  (69–76 vs 83–93 ns/yield, 16 vs 40 words). Where an Eio-based stack beats
+  (65–76 vs 90–97 ns/yield, 14 vs 40 words). Where an Eio-based stack beats
   an Lwt-based stack (cohttp-eio vs cohttp-lwt, ~5–9 %), holding the HTTP
   engine constant (httpun) shows the difference is the *stack*, not the
   scheduler.
@@ -85,7 +86,11 @@ bind flavours) is preserved in
 
 > ⚠️ All numbers: micro-benchmarks and loopback I/O on one laptop
 > (Intel i7-9750H, Linux 6.17, OCaml 5.4.0 without flambda). Treat
-> differences under 10 % as noise; prefer ratios to absolutes. The
+> differences under 10 % as noise; prefer ratios to absolutes. Two
+> measurement sessions coexist: the June campaign and a 2026-07 trio
+> session that added the `lean` core; absolute figures drift between
+> sessions, so every cross-core comparison is made within one session
+> (each table says which). The
 > [methodology section](#how-we-measured-methodology) describes the
 > protocol that makes these numbers reproducible.
 
@@ -190,7 +195,9 @@ blue-grey = lab — one colour, but note that each lab row is a *different*
 semantics-breaking experiment (suspending bind, direct yield on the bare
 scheduler, direct style on a private ring), named in its label; orange =
 Eio (io_uring), purple = Miou (ppoll). All Lwt
-rows in all charts were measured with the final shipped code.
+rows in all charts were measured with the final shipped code. (The `lean`
+core, added 2026-07, appears in the tables only for now; the SVG charts
+still show the June campaign and will gain its bars when regenerated.)
 
 ## The benchmarks, why they are relevant, and the results
 
@@ -217,15 +224,20 @@ minor-heap words per operation (`Gc.minor_words` delta). CPU-pinned
 (`taskset`), minimum over interleaved runs of the two per-core binaries.
 (Eio and Miou have no bind — this table is Lwt-family only.)
 
-| chain of binds (ns/op, words/op) | classic core | effect core | lab (breaking) |
-|---|---|---|---|
-| resolved (`bind (return v) f`) | 10.6–11.4 / 25 | **5.1–5.2 / 9** (~2×) | 9.5 / 9 |
-| suspended (`bind (pause ()) f`, through `Lwt_main.run`) | 1404–1430 / 88 | **1262–1284 / 71** (~10 %) | 96 / 52 |
+| chain of binds (ns/op, words/op) | classic core | effect core | lean core | lab (breaking) |
+|---|---|---|---|---|
+| resolved (`bind (return v) f`) | 10.9–13.2 / 25 | 5.5–6.0 / 9 (~2×) | **4.9–6.4 / 9** (~2×) | 9.5 / 9 |
+| suspended (`bind (pause ()) f`, through `Lwt_main.run`) | 1392–1497 / 88 | 1349–1398 / 71 | **1345–1384 / 71** | 96 / 52 |
+
+(Lwt trio re-measured 2026-07 in one interleaved session; the lab column is
+the June measurement. The June effect-core figures, 5.1–5.2 and 1262–1284,
+are within the session-to-session drift.)
 
 The resolved row is the common case of hot monadic code — every
 already-resolved `>>=` in every Lwt program. The historical bind's
 promise + callback + proxy bookkeeping becomes one lean promise: **~2×
-faster, a third of the allocation**.
+faster, a third of the allocation** — identically on the effect core and on
+the lean (no-effects) core, which share the promise layout.
 
 *The lab rows here*: “lab: breaking suspending bind” is the lab branch's
 effect-based bind that **suspends the fiber** instead of allocating a
@@ -237,14 +249,15 @@ on bind; on the suspended chart, the lab scheduler additionally drives
 The suspended row measures a *serial* chain of `pause`s through the full
 main loop. Lwt's semantics make each pause generation interleave with one
 I/O-engine iteration (so pause loops cannot starve I/O); that engine lap
-(~1.3 µs of libev) dominates the figure on **both** cores — the effect
-core's leaner machinery shows as ~10 % and 17 fewer words. The lab column
-shows what a scheduler with no engine to honour measures; the *pause storm*
-below shows the batched picture, where one lap is amortized over a thousand
-resumptions.
+(~1.3 µs of libev) dominates the figure on **all three** cores — the
+rewritten cores' leaner machinery shows as a few percent and 17 fewer
+words. The lab column shows what a scheduler with no engine to honour
+measures; the *pause storm* below shows the batched picture, where one lap
+is amortized over a thousand resumptions.
 
 Also not visible per-op: tail-recursive bind loops are O(1) in live memory
-on the effect core (reverse-merged proxies, measured flat over 2M steps).
+on the rewritten cores (reverse-merged proxies, measured flat over 2M
+steps).
 
 ### 2. Scheduling — pure cooperative yielding
 
@@ -265,19 +278,28 @@ CPU-pinned, warm-up + `Gc.full_major` before measuring.
 
 | 1000 fibers × 1000 yields | ns/yield | words/yield |
 |---|---|---|
-| lab: breaking direct yield | 59 | 9 |
-| **Lwt_direct (effect core)** | **69–76** | **16** |
-| Eio | 83–93 | 40 |
-| Lwt_direct (classic core) | 132–156 | 18 |
-| Lwt (effect core, `pause`) | 222–237 | 61 |
-| Lwt (classic core, `pause`) | 234–255 | 67 |
-| Miou | 416–436 | 67 |
+| lab: breaking direct yield (June) | 59 | 9 |
+| **Lwt_direct (lean core)** | **65–70** | **14** |
+| Lwt_direct (effect core) | 72–76 | 14 |
+| Eio | 90–97 | 40 |
+| Lwt_direct (classic core) | 124–130 | 12 |
+| Lwt (lean core, `pause`) | 234–236 | 61 |
+| Lwt (effect core, `pause`) | 241–245 | 61 |
+| Lwt (classic core, `pause`) | 243–252 | 67 |
+| Miou | 449–490 | 67 |
 
-The monadic `pause` storm is at parity to ~8 % faster on the effect core
-(both cores pay one engine lap per pause generation, amortized here over
-the 1000-fiber batch). The headline is direct style: **`Lwt_direct` on the
-effect core's run queue is faster than Eio**, with the lowest allocation of
-the table — a yield is one ring-buffer push/pop.
+(Trio re-measured 2026-07, one interleaved session, Eio and Miou in the
+same windows; the per-yield allocation of `Lwt_direct` changed slightly
+since June on all branches, an effect-handler syntax change.)
+
+The monadic `pause` storm is at parity to a few percent faster on the
+rewritten cores (all cores pay one engine lap per pause generation,
+amortized here over the 1000-fiber batch). The headline is direct style:
+**`Lwt_direct` on the rewritten core's run queue is faster than Eio**, with
+the lowest allocation of the table next to the classic core's — a yield is
+one ring-buffer push/pop. Note that the lean core, which contains no effect
+machinery, serves `Lwt_direct` at full speed: the direct style needs the
+core's run-queue hook, not an effect-based core.
 
 *The lab row here*: a direct-style yield on the lab branch's **bare
 scheduler** — no `Lwt_main`, no engine, no promise: the absolute floor for
@@ -304,18 +326,25 @@ workers must roam). Table: µs per round-trip, min over alternating runs
 
 | config | 1 B | 64 B | 1 KB | 16 KB | 256 KB |
 |---|---|---|---|---|---|
-| Lwt bigarray (classic, epoll) | 9.9 | 10.0 | 10.0 | 13.5 | 96.6 |
-| Lwt bigarray (effects, epoll) | 9.6 | 9.6 | 9.7 | 13.1 | 99.5 |
-| Lwt bigarray (classic, io_uring) | 7.4 | 7.0 | 7.5 | 10.8 | 78.8 |
-| Lwt bigarray (effects, io_uring) | 7.3 | 6.8 | 7.1 | 10.6 | **75.2** |
-| Eio (io_uring) | **6.4** | **6.6** | **6.4** | **9.8** | 76.4 |
-| lab: breaking direct + own ring | 6.1 | — | — | — | — |
-| Miou | 22.8 | 22.4 | 23.3 | 26.7 | 170.3 |
+| Lwt bigarray (classic, epoll) | 9.6 | 9.7 | 10.4 | 13.1 | 95.8 |
+| Lwt bigarray (effects, epoll) | 9.5 | 9.4 | 9.7 | 13.1 | 95.7 |
+| Lwt bigarray (lean, epoll) | 9.6 | 9.5 | 10.0 | 12.7 | 94.8 |
+| Lwt bigarray (classic, io_uring) | 7.0 | 7.0 | 7.0 | 10.0 | 77.4 |
+| Lwt bigarray (effects, io_uring) | 7.0 | 7.1 | 7.3 | 10.4 | 76.6 |
+| Lwt bigarray (lean, io_uring) | 7.1 | 7.0 | 7.6 | 10.3 | **76.2** |
+| Eio (io_uring) | **6.7** | **6.6** | 7.1 | **10.1** | 76.0 |
+| lab: breaking direct + own ring (June) | 6.1 | — | — | — | — |
+| Miou | 21.9 | 21.9 | 22.0 | 27.5 | 177.8 |
 
-io_uring is worth ~2.5 µs per round-trip to Lwt at every size. Against Eio
-it is effectively a three-way tie: Eio keeps a small edge (≲1 µs) at the
-smallest payloads, the gap closes by 16 KB, and the effect core is the
-fastest of the table at 256 KB — unchanged Lwt code *at Eio level*.
+(Trio re-measured 2026-07, min over 2 interleaved rounds; Eio and Miou from
+the same session.)
+
+io_uring is worth ~2.5 µs per round-trip to Lwt at every size. The three
+Lwt cores are indistinguishable at every size on both engines: this
+benchmark is engine-dominated, as expected. Against Eio it is effectively a
+tie: Eio keeps a small edge (≲0.5 µs) at the smallest payloads, the gap
+closes by 1 KB, and the rewritten cores are fastest at 256 KB — unchanged
+Lwt code *at Eio level*.
 
 *The lab row here (and in the echo table below)*: the lab branch's direct
 style driving its **own private io_uring ring**, bypassing `Lwt_unix` and
@@ -341,17 +370,21 @@ samples in the same windows.)
 
 | config | round-trips/s |
 |---|---|
-| lab: breaking direct + own ring | **108 037** |
-| Eio (io_uring) | 92.2k – 99.6k |
-| Lwt (effect core, io_uring) | 92.3k – 98.7k |
-| Lwt (classic core, io_uring) | 90.4k – 94.8k |
-| Lwt (effect core, epoll) | 69.3k – 71.6k |
-| Lwt (classic core, epoll) | 69.2k – 73.3k |
-| Miou (ppoll) | 20.8k – 22.1k |
+| lab: breaking direct + own ring (June) | **108 037** |
+| Eio (io_uring) | 89.1k – 93.5k |
+| Lwt (lean core, io_uring) | 85.6k – 91.6k |
+| Lwt (effect core, io_uring) | 85.0k – 93.1k |
+| Lwt (classic core, io_uring) | 87.3k – 89.4k |
+| Lwt (lean core, epoll) | 67.2k – 69.2k |
+| Lwt (effect core, epoll) | 64.5k – 68.7k |
+| Lwt (classic core, epoll) | 63.3k – 68.7k |
+| Miou (ppoll, June) | 20.8k – 22.1k |
 
-**The three io_uring rows are a statistical tie** — unchanged Lwt code on
-the transparent engine is at Eio level. epoll → io_uring is worth ~+30 %
-here. For calibration, the lab's private-ring configurations re-measured in
+(Trio re-measured 2026-07, 3 interleaved rounds, Eio in the same windows.)
+
+**The four io_uring rows are a statistical tie** — unchanged Lwt code on
+the transparent engine is at Eio level, on all three cores. epoll →
+io_uring is worth ~+30 % here. For calibration, the lab's private-ring configurations re-measured in
 the same windows: `Compat` + own ring 94.2k (≈ the transparent engine),
 direct style + own ring 108k — the remaining direct-style margin is the
 semantics trade the drop-in declines to make.
@@ -371,8 +404,9 @@ fixed body to `GET /`; 50 concurrent client fibers each perform 200
 `Client.get`, opening a **new connection per request** — client and server
 share the process and the core (closed loop), so absolute numbers are low
 by construction. A second pass installs the io_uring engine
-(`Lwt_uring.set ()`, process-global). Best of 3 interleaved rounds — this
-benchmark has the largest run-to-run variance of the suite.
+(`Lwt_uring.set ()`, process-global). Median of 3 interleaved rounds
+(2026-07 trio session) — this benchmark has the largest run-to-run variance
+of the suite.
 
 Reading the rows: the magenta **“Lwt effects (io_uring)”** bar is the
 shipped configuration, out of the box — multishot accept is built into its
@@ -382,26 +416,28 @@ per-request `getservbyname`; it benefits both cores equally and is shown
 as the optional extra it is.
 
 The chart shows cohttp-lwt only: for context, **cohttp-eio** measured
-8 495–8 964 req/s in the same windows — but it is a recent, independent
+7 316–7 795 req/s in the same windows — but it is a recent, independent
 Eio-native implementation that shares little beyond types with cohttp-lwt,
 so the comparison says more about the two stacks than about the schedulers
 (§7 holds the engine constant).
 
-| config | classic | effect core |
-|---|---|---|
-| epoll | 6 105 | **6 557** (+7 %) |
-| epoll + static resolver | 6 560 | **6 803** |
-| io_uring (+ multishot accept on the effect core) | 6 964 | **7 486** (+7 %) |
-| io_uring + static resolver | 7 671 | **8 174** (+7 %) |
-| cohttp-eio | | 8 495 – 8 964 |
+| config | classic | effect core | lean core |
+|---|---|---|---|
+| epoll | 4 614 | **5 035** (+9 %) | 5 004 (+8 %) |
+| epoll + static resolver | 5 035 | **5 547** | 5 528 |
+| io_uring (+ multishot accept on the rewritten cores) | 5 235 | **6 045** (+15 %) | 5 963 (+14 %) |
+| io_uring + static resolver | 5 732 | **6 361** (+11 %) | 6 351 (+11 %) |
+| cohttp-eio | | 7 316 – 7 795 | |
 
 This is where the per-connection optimisations show (see
 [the optimisations](#the-optimisations-and-what-each-bought)): syscall
 accounting found ~13 syscalls and ~4 worker-pool round-trips per request in
 the connection lifecycle, and three of them could be removed. The remaining
-~5–9 % to cohttp-eio is the stack itself (an `Lwt_io` buffered channel pair
-per connection, conduit, older parsing) plus the client-side socket setup —
-and it is the stack, not the scheduler, as §7 demonstrates directly.
+gap to cohttp-eio (~5–9 % in the June session, 13–18 % in the July one; the
+ratio moves with machine state) is the stack itself (an `Lwt_io` buffered
+channel pair per connection, conduit, older parsing) plus the client-side
+socket setup — and it is the stack, not the scheduler, as §7 demonstrates
+directly.
 
 ### 6. Realistic HTTP — external load generator, latency percentiles
 
@@ -457,6 +493,8 @@ recent Eio-native stack; an h1-based stack on Miou): they bound the design
 space but do not compare schedulers — §7 does that properly, holding the
 HTTP engine constant.
 
+June campaign table (the reference stacks were measured in these windows):
+
 | config | saturation (req/s, /plaintext) | p99 @5k | p99 @10k | p99 @20k |
 |---|---|---|---|---|
 | cohttp-eio | **68–82k** | **4.0 ms** | **4.6 ms** | 8.5 ms |
@@ -466,19 +504,39 @@ HTTP engine constant.
 | cohttp-lwt, effect core (epoll) | 35.0k (−1.4 %) | 6.2 ms | 11.4 ms | 18.5 ms |
 | httpcats (Miou, 1 domain) | 32.6k | 8.1 ms | 7.8 ms | **5.2 ms** |
 
+2026-07 trio session (same protocol, the three Lwt cores interleaved;
+absolute figures lower than June across the board, machine state):
+
+| config | saturation (req/s, /plaintext) | p99 @5k | p99 @10k | p99 @20k |
+|---|---|---|---|---|
+| cohttp-lwt, classic (io_uring) | 36.8k | 3.1 ms | 8.3–8.5 ms | 10.1–15.1 ms |
+| cohttp-lwt, effect core (io_uring) | 36.1k (−1.9 %) | 2.8 ms | 8.2–8.9 ms | 16.1–18.5 ms |
+| cohttp-lwt, lean core (io_uring) | 36.5k (−0.8 %) | 3.0 ms | 7.0–8.5 ms | 16.4–18.4 ms |
+| cohttp-lwt, classic (epoll) | 29.2k | 4.9 ms | 9.7–10.1 ms | 10.0–20.4 ms |
+| cohttp-lwt, effect core (epoll) | 28.8k (−1.2 %) | 3.0 ms | 10.4–11.1 ms | 19.9–21.3 ms |
+| cohttp-lwt, lean core (epoll) | 29.3k (+0.5 %) | 4.5 ms | 10.4–11.2 ms | 19.7–20.7 ms |
+
 Findings:
 
-1. The transparent io_uring engine is worth **+27 %** to Lwt at saturation
-   (35.5k → 45.0k) — its largest win on this stack, on unchanged code.
-2. The two Lwt cores are at **latency parity at every rate** (in a
-   dedicated interleaved A/B at 20k, median p99 came out 16.99 ms effect vs
-   17.05 ms classic), and within noise of each other at saturation.
+1. The transparent io_uring engine is worth **+26–27 %** to Lwt at
+   saturation in both sessions (35.5k → 45.0k in June, 29.2k → 36.8k in
+   July) — its largest win on this stack, on unchanged code.
+2. The three Lwt cores are at **latency parity at every rate** (the
+   per-round swing of any single core exceeds the spread between cores; the
+   dedicated June interleaved A/B at 20k gave median p99 16.99 ms effect vs
+   17.05 ms classic) and within a few percent at saturation. The rewritten
+   cores' small saturation deficit (−1 to −2 % in July, up to −4 % in June)
+   is shared by the effect and the lean cores alike: it belongs to the
+   rewrite's memory-access profile, not to effects (section 9).
 3. Under `olly`, the effect core has the **best GC-pause profile** measured
-   here: max 1.0 ms under full load (classic: 1.7 ms).
+   here: max 1.0 ms under full load (classic: 1.7 ms, June); at the July
+   session's load both rewritten cores and classic all stayed sub-ms.
 4. httpcats/Miou has the most *stable* latency of the table at modest
    throughput — consistent with its bench report's fairness claims;
    cohttp-eio dominates this table on both axes. **Read that dominance for
    what it is: a comparison of HTTP *stacks***, settled next.
+5. Memory health: the `/gc` live set stays **flat** under sustained load on
+   all three cores (removable waiters at work on the rewritten ones).
 
 ### 7. httpun — the same protocol engine on every scheduler
 
@@ -501,11 +559,18 @@ to the connection-per-request cohttp tables.
 
 | config | saturation (req/s) | p99 @20k req/s |
 |---|---|---|
-| httpun-lwt, classic (io_uring) | **98.0k – 100.2k** | 8.4 – 22.5 ms |
-| httpun-lwt, effect core (io_uring) | 82.0k – 96.3k | **10.0 – 10.4 ms** |
-| httpun-lwt, classic (epoll) | 68.6k – 69.2k | 8.2 – 10.3 ms |
-| httpun-lwt, effect core (epoll) | 61.1k – 73.9k | 9.4 – 10.5 ms |
-| httpun-eio (gluten-eio) | 34.5k – 34.8k | 15.6 – 18.8 ms |
+| httpun-lwt, classic (io_uring) | 92.6k – 99.9k | 5.9 – 6.7 ms |
+| httpun-lwt, effect core (io_uring) | 91.4k – **100.9k** | 2.4 – 7.7 ms |
+| httpun-lwt, lean core (io_uring) | 82.6k – 96.6k | 6.9 – 7.5 ms |
+| httpun-lwt, classic (epoll) | 72.1k – 80.1k | 3.7 – 8.4 ms |
+| httpun-lwt, effect core (epoll) | 75.4k – 77.1k | 4.4 – 8.8 ms |
+| httpun-lwt, lean core (epoll) | 68.5k – 75.9k | 8.9 – 9.5 ms |
+| httpun-eio (gluten-eio, June) | 34.5k – 34.8k | 15.6 – 18.8 ms |
+
+(Lwt trio re-measured 2026-07, 3 interleaved saturation rounds and 2
+latency rounds per engine; the httpun-eio row is the June measurement. The
+June session's Lwt figures, e.g. classic 98.0–100.2k at saturation, are in
+the same band.)
 
 What it shows:
 
@@ -518,12 +583,13 @@ What it shows:
   adapter** (cohttp-eio reaches 75k on this very protocol). Adapter quality
   is a real variable even at constant engine — and the mature, hand-tuned
   adapter is the Lwt one.
-- io_uring again: **+44 %** over epoll on this lean stack (the leaner the
-  stack, the more the engine shows).
-- The two Lwt cores: effect-core saturation within 0–16 % of classic
-  (overlapping in half the rounds; the spread is thermal), and the **most
-  stable tail of the table** (p99 10.0–10.4 ms across rounds, while
-  classic swung 8.4–22.5 ms).
+- io_uring again: **+27–44 %** over epoll on this lean stack depending on
+  the session (the leaner the stack, the more the engine shows).
+- The three Lwt cores are a **statistical tie on both engines**: each core
+  wins some rounds, the bands overlap, and the p99 tails sit in one
+  single-digit band. (The June session's apparent 0–16 % effect-core
+  saturation deficit does not reproduce; it was thermal round-to-round
+  variance, as suspected then.)
 
 ### 8. Lwt on Eio: reusing Eio's runtime instead of the maison ring
 
@@ -609,7 +675,9 @@ run-queue hook (`Lwt.Private.scheduler_enqueue`). The whole historical
 suite passes on the lean core as well (`test/core` 705, `test/unix` 233,
 ppx, react, direct, retry, uring). The three cores were then benchmarked in
 a single interleaved session (cool idle machine, one saved binary per core,
-runs alternated, same protocols as the rest of this README).
+runs alternated, same protocols as the rest of this README). The
+per-benchmark sections above carry the detailed trio numbers; the table
+below is the same-session summary.
 
 | bench (same session, interleaved) | classic | effects | lean (no effects) |
 |---|---|---|---|
