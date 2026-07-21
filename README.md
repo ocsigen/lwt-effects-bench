@@ -849,6 +849,16 @@ the combination that produced every number in this README twice.
 
 ## Reproducing
 
+**One command**: [`bench-all.sh`](bench-all.sh) builds one binary per core
+(classic / effects / lean), saves them, and runs every suite with the cores
+interleaved in the same windows, enforcing the protocol below (thermal
+gate, md5 check of the per-core binaries, taskset only for pure-CPU
+suites). Requirements are listed in its header. `--quick` smoke-tests,
+`--only`/`--rounds`/`--skip-build` scope a run. Raw outputs land in
+`results/`.
+
+The manual steps it automates:
+
 ```sh
 # Switch with eio_main, miou, cohttp-eio, cohttp-lwt-unix,
 # httpun-lwt-unix, httpun-eio installed.
